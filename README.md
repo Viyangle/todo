@@ -9,16 +9,24 @@ A floating Windows todo app built with `PySide6 + SQLite`.
 - Drag the title bar to move the window
 - Snap to screen edges when dragged near them
 - Resize the window with the bottom-right handle
+- Keep part of the window visible on screen while moving/resizing (prevents losing the resize handle)
 - Remember window size and position after restart
 - System tray support
 - Minimize to tray with the top-right `-` button
 - Quit the app with the top-right `x` button or tray menu
 - Global hotkey to show or hide the window: `Ctrl + Shift + Space`
 - Add todos with the input box or the `+` button
+- Optional deadline per todo
+- Hover on `due` (after enabling) to open a floating date/time picker (calendar + hour/minute dropdown, no text input)
+- Todos without deadline are shown as `长期事务`
+- Upcoming todos are highlighted (warning window configurable, default `120` minutes)
 - Click the circle in front of a todo to mark it done or undone
 - Clear all completed todos with the `clear` button
 - Refresh the list with the `refresh` button
 - Restore the default window size with the `default` button
+- Built-in settings page (open from `config` on main page)
+- Configure default window size and warning window
+- Save current window size as default from settings
 - Drag and drop to reorder todos
 - Auto-scroll while dragging near the top or bottom of the list
 - Local SQLite persistence
@@ -80,4 +88,5 @@ When copying to another computer, copy the whole `dist/Todo` folder instead of o
 
 - If `Ctrl + Shift + Space` is already used by another app, the global hotkey may fail to register.
 - Window size and position are stored locally through `QSettings`.
+- Default size and warning window are also stored in `QSettings`.
 - Use the tray menu `Quit` or the top-right `x` button for a full exit.
