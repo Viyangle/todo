@@ -7,3 +7,4 @@ class TodoItem:
     title: str
     done: bool
     sort_order: int
+    due_at: str | None = None

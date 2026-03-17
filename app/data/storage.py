@@ -25,29 +25,32 @@ class TodoStorage:
                     title TEXT NOT NULL,
                     done INTEGER NOT NULL DEFAULT 0,
                     sort_order INTEGER NOT NULL DEFAULT 0,
+                    due_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
-            self._ensure_sort_order_column(conn)
+            self._ensure_schema(conn)
             conn.commit()
 
-    def _ensure_sort_order_column(self, conn: sqlite3.Connection) -> None:
+    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
         columns = {
             row["name"]
             for row in conn.execute("PRAGMA table_info(todos)").fetchall()
         }
-        if "sort_order" in columns:
-            return
 
-        conn.execute("ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
-        conn.execute("UPDATE todos SET sort_order = id WHERE sort_order = 0")
+        if "sort_order" not in columns:
+            conn.execute("ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+            conn.execute("UPDATE todos SET sort_order = id WHERE sort_order = 0")
+
+        if "due_at" not in columns:
+            conn.execute("ALTER TABLE todos ADD COLUMN due_at TEXT")
 
     def list_todos(self) -> List[TodoItem]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, title, done, sort_order FROM todos ORDER BY sort_order ASC, id ASC"
+                "SELECT id, title, done, sort_order, due_at FROM todos ORDER BY sort_order ASC, id ASC"
             ).fetchall()
 
         return [
@@ -56,11 +59,12 @@ class TodoStorage:
                 title=row["title"],
                 done=bool(row["done"]),
                 sort_order=row["sort_order"],
+                due_at=row["due_at"],
             )
             for row in rows
         ]
 
-    def add_todo(self, title: str) -> TodoItem:
+    def add_todo(self, title: str, due_at: str | None = None) -> TodoItem:
         clean_title = title.strip()
         if not clean_title:
             raise ValueError("Todo title cannot be empty")
@@ -70,8 +74,8 @@ class TodoStorage:
                 "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM todos"
             ).fetchone()["next_sort_order"]
             cursor = conn.execute(
-                "INSERT INTO todos (title, done, sort_order) VALUES (?, 0, ?)",
-                (clean_title, next_sort_order),
+                "INSERT INTO todos (title, done, sort_order, due_at) VALUES (?, 0, ?, ?)",
+                (clean_title, next_sort_order, due_at),
             )
             conn.commit()
             todo_id = cursor.lastrowid
@@ -81,6 +85,7 @@ class TodoStorage:
             title=clean_title,
             done=False,
             sort_order=int(next_sort_order),
+            due_at=due_at,
         )
 
     def toggle_done(self, todo_id: int) -> None:

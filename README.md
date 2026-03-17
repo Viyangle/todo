@@ -60,6 +60,22 @@ On first run, the database file is created automatically:
 
 `data/todo.db`
 
+## Build Exe
+
+Use the project virtual environment to build the Windows executable:
+
+```powershell
+.\build.bat
+```
+
+After the build finishes, run:
+
+```txt
+dist/Todo/Todo.exe
+```
+
+When copying to another computer, copy the whole `dist/Todo` folder instead of only the `.exe` file.
+
 ## Notes
 
 - If `Ctrl + Shift + Space` is already used by another app, the global hotkey may fail to register.

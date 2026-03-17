@@ -1,8 +1,13 @@
-﻿from PySide6.QtCore import QPoint, QRectF, QSettings, QSize, Qt, Signal, QTimer
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QPainterPath, QPen
+﻿from PySide6.QtCore import QDate, QDateTime, QPoint, QRectF, QSettings, QSize, Qt, QTime, Signal, QTimer
+from PySide6.QtGui import QCursor, QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
+    QCalendarWidget,
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
@@ -14,6 +19,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
+    QStackedWidget,
     QStyle,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -418,9 +425,17 @@ class ReorderableTodoListWidget(QListWidget):
 
 
 class TodoRowWidget(QWidget):
-    def __init__(self, title: str, done: bool, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        title: str,
+        due_at: str | None,
+        done: bool,
+        is_due_soon: bool,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._done = done
+        self._is_due_soon = is_due_soon
         self._hovered = False
 
         layout = QHBoxLayout(self)
@@ -428,14 +443,35 @@ class TodoRowWidget(QWidget):
         layout.setSpacing(10)
 
         self.indicator = CheckIndicator(done, self)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
+
         self.label = QLabel(title)
         self.label.setWordWrap(True)
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        layout.addWidget(self.indicator, 0, Qt.AlignVCenter)
-        layout.addWidget(self.label, 1)
+        self.deadline_label = QLabel(self._format_deadline(due_at))
+        self.deadline_label.setWordWrap(False)
+        self.deadline_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        text_layout.addWidget(self.label)
+        text_layout.addWidget(self.deadline_label)
+
+        layout.addWidget(self.indicator, 0, Qt.AlignTop)
+        layout.addLayout(text_layout, 1)
 
         self._apply_state()
+
+    def _format_deadline(self, due_at: str | None) -> str:
+        if not due_at:
+            return "长期事务"
+
+        due = QDateTime.fromString(due_at, Qt.ISODate)
+        if not due.isValid():
+            return f"截止时间: {due_at}"
+        return f"截止时间: {due.toString('yyyy-MM-dd HH:mm')}"
 
     def set_done(self, done: bool) -> None:
         self._done = done
@@ -453,29 +489,46 @@ class TodoRowWidget(QWidget):
         super().leaveEvent(event)
 
     def _apply_state(self) -> None:
-        font = QFont(self.label.font())
-        font.setPointSize(12)
-        font.setStrikeOut(self._done)
-        font.setBold(not self._done)
-        self.label.setFont(font)
+        title_font = QFont(self.label.font())
+        title_font.setPointSize(12)
+        title_font.setStrikeOut(self._done)
+        title_font.setBold(not self._done)
+        self.label.setFont(title_font)
+
+        deadline_font = QFont(self.deadline_label.font())
+        deadline_font.setPointSize(9)
+        deadline_font.setStrikeOut(False)
+        deadline_font.setBold(False)
+        self.deadline_label.setFont(deadline_font)
 
         if self._done:
             text_color = "rgba(74, 88, 102, 150)"
+            deadline_color = "rgba(74, 88, 102, 130)"
             background = "rgba(255, 255, 255, 48)"
             border = "rgba(255, 255, 255, 50)"
         else:
             text_color = "rgb(28, 37, 48)"
+            deadline_color = "rgba(28, 37, 48, 170)"
             background = "rgba(255, 255, 255, 68)"
             border = "rgba(255, 255, 255, 64)"
+
+        if self._is_due_soon and not self._done:
+            deadline_color = "rgb(152, 54, 30)"
+            background = "rgba(255, 210, 182, 120)"
+            border = "rgba(245, 148, 102, 180)"
 
         if self._hovered and self._done:
             background = "rgba(196, 230, 210, 78)"
             border = "rgba(222, 245, 230, 124)"
+        elif self._hovered and self._is_due_soon and not self._done:
+            background = "rgba(255, 196, 156, 152)"
+            border = "rgba(238, 129, 71, 210)"
         elif self._hovered:
             background = "rgba(158, 208, 255, 82)"
             border = "rgba(214, 238, 255, 128)"
 
         self.label.setStyleSheet(f"background: transparent; color: {text_color};")
+        self.deadline_label.setStyleSheet(f"background: transparent; color: {deadline_color};")
         self.setStyleSheet(
             f"""
             TodoRowWidget {{
@@ -487,11 +540,12 @@ class TodoRowWidget(QWidget):
         )
 
     def sizeHint(self) -> QSize:
-        metrics = QFontMetrics(self.label.font())
-        text_height = metrics.height() + 8
+        title_metrics = QFontMetrics(self.label.font())
+        deadline_metrics = QFontMetrics(self.deadline_label.font())
+        text_height = title_metrics.height() + deadline_metrics.height() + 10
         content_height = max(text_height, self.indicator.sizeHint().height())
         vertical_padding = 24
-        return QSize(0, max(52, content_height + vertical_padding))
+        return QSize(0, max(62, content_height + vertical_padding))
 
 
 class TitleBar(QWidget):
@@ -557,10 +611,15 @@ class MainWindow(QMainWindow):
         self._is_quitting = False
         self._snap_margin = 24
         self._corner_radius = 22
-        self._default_size = QSize(360, 480)
+        self._minimum_size = QSize(400, 480)
+        self._fallback_default_size = QSize(400, 520)
+        self._default_size = self._load_default_size()
+        self._due_soon_minutes = self._load_due_warning_minutes()
+        self._geometry_adjusting = False
+        self._visible_corner_margin = 44
 
         self.setWindowTitle("Todo")
-        self.setMinimumSize(self._default_size)
+        self.setMinimumSize(self._minimum_size)
         self.resize(self._default_size)
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -588,25 +647,94 @@ class MainWindow(QMainWindow):
         self.title_bar = TitleBar(self)
         panel_layout.addWidget(self.title_bar)
 
+        self.page_stack = QStackedWidget(self.panel)
+
+        self.main_page = QWidget(self.page_stack)
+        main_page_layout = QVBoxLayout(self.main_page)
+        main_page_layout.setContentsMargins(0, 0, 0, 0)
+        main_page_layout.setSpacing(10)
+
         input_layout = QHBoxLayout()
+        input_layout.setSpacing(8)
         self.input_edit = QLineEdit()
         self.input_edit.setPlaceholderText("Enter a task and press Enter")
+        self.input_edit.setMinimumWidth(230)
         self.input_edit.returnPressed.connect(self.add_todo)
+
+        self.enable_due_checkbox = QCheckBox("due")
+        self.enable_due_checkbox.toggled.connect(self._toggle_due_edit_enabled)
+        self.enable_due_checkbox.installEventFilter(self)
+
+        tomorrow = QDate.currentDate().addDays(1)
+        self._due_date = tomorrow
+        self._due_time = QTime.currentTime()
+
+        self.due_popup = QFrame(self.panel)
+        self.due_popup.setObjectName("duePopup")
+        self.due_popup.setFrameShape(QFrame.StyledPanel)
+        self.due_popup.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.due_popup.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.due_popup.installEventFilter(self)
+
+        popup_layout = QVBoxLayout(self.due_popup)
+        popup_layout.setContentsMargins(10, 10, 10, 10)
+        popup_layout.setSpacing(8)
+
+        self.due_calendar = QCalendarWidget(self.due_popup)
+        self.due_calendar.setSelectedDate(self._due_date)
+        self.due_calendar.clicked.connect(self._on_due_date_changed)
+        popup_layout.addWidget(self.due_calendar)
+
+        time_row = QHBoxLayout()
+        time_row.setSpacing(6)
+        time_label = QLabel("time")
+        self.due_hour_combo = QComboBox(self.due_popup)
+        self.due_minute_combo = QComboBox(self.due_popup)
+
+        for hour in range(24):
+            self.due_hour_combo.addItem(f"{hour:02d}")
+        for minute in range(0, 60, 5):
+            self.due_minute_combo.addItem(f"{minute:02d}")
+
+        rounded_minute = (self._due_time.minute() // 5) * 5
+        self.due_hour_combo.setCurrentText(f"{self._due_time.hour():02d}")
+        self.due_minute_combo.setCurrentText(f"{rounded_minute:02d}")
+        self.due_hour_combo.currentTextChanged.connect(self._on_due_time_changed)
+        self.due_minute_combo.currentTextChanged.connect(self._on_due_time_changed)
+
+        time_row.addWidget(time_label)
+        time_row.addWidget(self.due_hour_combo)
+        time_row.addWidget(self.due_minute_combo)
+        popup_layout.addLayout(time_row)
+
+        self._due_popup_hide_timer = QTimer(self)
+        self._due_popup_hide_timer.setSingleShot(True)
+        self._due_popup_hide_timer.setInterval(150)
+        self._due_popup_hide_timer.timeout.connect(self._hide_due_popup_if_outside)
+
+        self._due_popup_show_timer = QTimer(self)
+        self._due_popup_show_timer.setSingleShot(True)
+        self._due_popup_show_timer.setInterval(180)
+        self._due_popup_show_timer.timeout.connect(self._show_due_popup)
 
         add_button = ActionIconButton("add")
         add_button.clicked.connect(self.add_todo)
 
-        input_layout.addWidget(self.input_edit)
+        input_layout.addWidget(self.input_edit, 1)
+        input_layout.addWidget(self.enable_due_checkbox)
         input_layout.addWidget(add_button)
-        panel_layout.addLayout(input_layout)
+        main_page_layout.addLayout(input_layout)
 
         self.todo_list = ReorderableTodoListWidget()
         self.todo_list.order_changed.connect(self.persist_current_order)
-        panel_layout.addWidget(self.todo_list)
+        main_page_layout.addWidget(self.todo_list)
 
         action_layout = QHBoxLayout()
         reset_button = QPushButton("default")
         reset_button.clicked.connect(self.restore_default_size)
+
+        config_button = QPushButton("config")
+        config_button.clicked.connect(self.show_settings_page)
 
         delete_button = QPushButton("clear")
         delete_button.clicked.connect(self.delete_completed)
@@ -617,11 +745,66 @@ class MainWindow(QMainWindow):
         self.resize_handle = ResizeHandle(self, self.panel)
 
         action_layout.addWidget(reset_button)
+        action_layout.addWidget(config_button)
         action_layout.addStretch()
         action_layout.addWidget(delete_button)
         action_layout.addWidget(refresh_button)
         action_layout.addWidget(self.resize_handle, 0, Qt.AlignRight | Qt.AlignBottom)
-        panel_layout.addLayout(action_layout)
+        main_page_layout.addLayout(action_layout)
+
+        self.settings_page = QWidget(self.page_stack)
+        settings_layout = QVBoxLayout(self.settings_page)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(12)
+
+        settings_title = QLabel("Settings")
+        settings_title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        settings_layout.addWidget(settings_title)
+
+        form_layout = QFormLayout()
+        form_layout.setHorizontalSpacing(12)
+        form_layout.setVerticalSpacing(10)
+
+        self.default_width_spin = QSpinBox(self.settings_page)
+        self.default_width_spin.setRange(self._minimum_size.width(), 1200)
+        self.default_width_spin.setSingleStep(20)
+
+        self.default_height_spin = QSpinBox(self.settings_page)
+        self.default_height_spin.setRange(self._minimum_size.height(), 1400)
+        self.default_height_spin.setSingleStep(20)
+
+        self.warn_minutes_spin = QSpinBox(self.settings_page)
+        self.warn_minutes_spin.setRange(10, 1440)
+        self.warn_minutes_spin.setSingleStep(10)
+        self.warn_minutes_spin.setSuffix(" min")
+
+        form_layout.addRow("Default Width", self.default_width_spin)
+        form_layout.addRow("Default Height", self.default_height_spin)
+        form_layout.addRow("Warning", self.warn_minutes_spin)
+        settings_layout.addLayout(form_layout)
+
+        settings_layout.addStretch()
+
+        settings_action_layout = QHBoxLayout()
+        back_button = QPushButton("back")
+        back_button.clicked.connect(self.show_main_page)
+
+        use_current_size_button = QPushButton("use current size")
+        use_current_size_button.clicked.connect(self.save_current_size_as_default)
+
+        save_button = QPushButton("save")
+        save_button.clicked.connect(self.save_settings)
+
+        settings_action_layout.addWidget(back_button)
+        settings_action_layout.addWidget(use_current_size_button)
+        settings_action_layout.addStretch()
+        settings_action_layout.addWidget(save_button)
+        settings_layout.addLayout(settings_action_layout)
+
+        self.page_stack.addWidget(self.main_page)
+        self.page_stack.addWidget(self.settings_page)
+        self.page_stack.setCurrentWidget(self.main_page)
+        panel_layout.addWidget(self.page_stack)
 
         main_layout.addWidget(self.panel)
 
@@ -650,7 +833,7 @@ class MainWindow(QMainWindow):
             QLabel {{
                 color: rgb(28, 37, 48);
             }}
-            QLineEdit, QListWidget {{
+            QLineEdit, QSpinBox, QComboBox, QListWidget {{
                 background-color: rgba(255, 255, 255, 92);
                 border: 1px solid rgba(255, 255, 255, 140);
                 border-radius: 16px;
@@ -658,9 +841,35 @@ class MainWindow(QMainWindow):
                 padding: 10px 12px;
                 outline: none;
             }}
-            QLineEdit:focus {{
+            QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
                 border: 1px solid rgba(164, 214, 255, 180);
                 background-color: rgba(255, 255, 255, 118);
+            }}
+            #duePopup {{
+                background-color: rgba(230, 240, 252, 244);
+                border: 1px solid rgba(255, 255, 255, 170);
+                border-radius: 14px;
+            }}
+            QCalendarWidget QWidget {{
+                alternate-background-color: rgba(200, 220, 242, 140);
+            }}
+            QCalendarWidget QAbstractItemView:enabled {{
+                selection-background-color: rgba(61, 96, 146, 235);
+                selection-color: rgb(245, 248, 252);
+            }}
+            QCalendarWidget QTableView::item:selected {{
+                background-color: rgb(0, 0, 0);
+                color: rgb(255, 255, 255);
+            }}
+            QCheckBox {{
+                color: rgb(31, 39, 51);
+                font-size: 12px;
+                font-weight: 600;
+                padding: 0 4px;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
             }}
             QListWidget {{
                 padding: 8px;
@@ -729,15 +938,56 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def _load_default_size(self) -> QSize:
+        saved_size = self.settings.value("prefs/default_size")
+        if isinstance(saved_size, QSize) and saved_size.isValid():
+            width = max(self._minimum_size.width(), saved_size.width())
+            height = max(self._minimum_size.height(), saved_size.height())
+            return QSize(width, height)
+        return QSize(self._fallback_default_size)
+
+    def _load_due_warning_minutes(self) -> int:
+        saved_value = self.settings.value("prefs/warn_minutes", 120)
+        try:
+            minutes = int(saved_value)
+        except (TypeError, ValueError):
+            minutes = 120
+        return max(10, minutes)
+
     def restore_default_size(self) -> None:
         self.resize(self._default_size)
 
+    def show_settings_page(self) -> None:
+        self.default_width_spin.setValue(self._default_size.width())
+        self.default_height_spin.setValue(self._default_size.height())
+        self.warn_minutes_spin.setValue(self._due_soon_minutes)
+        self.page_stack.setCurrentWidget(self.settings_page)
+
+    def show_main_page(self) -> None:
+        self.page_stack.setCurrentWidget(self.main_page)
+
+    def save_settings(self) -> None:
+        self._default_size = QSize(self.default_width_spin.value(), self.default_height_spin.value())
+        self._due_soon_minutes = self.warn_minutes_spin.value()
+        self.settings.setValue("prefs/default_size", self._default_size)
+        self.settings.setValue("prefs/warn_minutes", self._due_soon_minutes)
+        self.show_main_page()
+        self._refresh_list(keep_scroll=True)
+
+    def save_current_size_as_default(self) -> None:
+        self._default_size = QSize(self.width(), self.height())
+        self.settings.setValue("prefs/default_size", self._default_size)
+        self.default_width_spin.setValue(self._default_size.width())
+        self.default_height_spin.setValue(self._default_size.height())
+
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
+        self._ensure_window_accessible()
         self._save_window_size()
 
     def moveEvent(self, event) -> None:  # type: ignore[override]
         super().moveEvent(event)
+        self._ensure_window_accessible()
         self._save_window_position()
 
     def quit_application(self) -> None:
@@ -798,6 +1048,7 @@ class MainWindow(QMainWindow):
 
         target_position = self._clamp_position_to_screen(saved_position)
         self.move(target_position)
+        self._ensure_window_accessible()
 
     def _save_window_size(self) -> None:
         self.settings.setValue("window/size", self.size())
@@ -820,19 +1071,146 @@ class MainWindow(QMainWindow):
         clamped_y = max(geometry.top(), min(position.y(), geometry.bottom() - frame_height))
         return QPoint(clamped_x, clamped_y)
 
+    def _ensure_window_accessible(self) -> None:
+        if self._geometry_adjusting:
+            return
+
+        frame = self.frameGeometry()
+        screen = QApplication.screenAt(frame.center())
+        if screen is None:
+            screen = QApplication.screenAt(frame.bottomRight())
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+
+        geometry = screen.availableGeometry()
+        target_width = min(frame.width(), geometry.width())
+        target_height = min(frame.height(), geometry.height())
+
+        min_x = geometry.left() - target_width + self._visible_corner_margin
+        max_x = geometry.right() - self._visible_corner_margin
+        min_y = geometry.top() - target_height + self._visible_corner_margin
+        max_y = geometry.bottom() - self._visible_corner_margin
+
+        target_x = max(min_x, min(frame.x(), max_x))
+        target_y = max(min_y, min(frame.y(), max_y))
+
+        needs_resize = target_width != frame.width() or target_height != frame.height()
+        needs_move = target_x != frame.x() or target_y != frame.y()
+        if not needs_resize and not needs_move:
+            return
+
+        self._geometry_adjusting = True
+        try:
+            if needs_resize:
+                self.resize(target_width, target_height)
+            if needs_move:
+                self.move(target_x, target_y)
+        finally:
+            self._geometry_adjusting = False
+
     def add_todo(self) -> None:
         text = self.input_edit.text()
         if not text.strip():
             return
 
+        due_at = None
+        if self.enable_due_checkbox.isChecked():
+            due_value = QDateTime(self._due_date, self._due_time)
+            due_at = due_value.toString(Qt.ISODate)
+
         try:
-            self.storage.add_todo(text)
+            self.storage.add_todo(text, due_at=due_at)
         except ValueError as error:
             QMessageBox.warning(self, "Warning", str(error))
             return
 
         self.input_edit.clear()
         self._refresh_list(scroll_to_bottom=True)
+
+    def _toggle_due_edit_enabled(self, checked: bool) -> None:
+        if not checked:
+            self._due_popup_show_timer.stop()
+            self._due_popup_hide_timer.stop()
+            self.due_popup.hide()
+            return
+
+        if self.enable_due_checkbox.underMouse():
+            self._due_popup_show_timer.start()
+
+    def eventFilter(self, watched, event):  # type: ignore[override]
+        if watched is self.enable_due_checkbox:
+            if event.type() == event.Type.Enter and self.enable_due_checkbox.isChecked():
+                self._due_popup_show_timer.start()
+            elif event.type() == event.Type.Leave:
+                self._due_popup_show_timer.stop()
+                self._due_popup_hide_timer.start()
+            elif event.type() == event.Type.MouseButtonPress:
+                self._due_popup_show_timer.stop()
+        elif watched is self.due_popup:
+            if event.type() == event.Type.Enter:
+                self._due_popup_hide_timer.stop()
+            elif event.type() == event.Type.Leave:
+                self._due_popup_hide_timer.start()
+
+        return super().eventFilter(watched, event)
+
+    def _show_due_popup(self) -> None:
+        if not self.enable_due_checkbox.isChecked():
+            return
+
+        anchor = self.enable_due_checkbox.mapToGlobal(QPoint(0, self.enable_due_checkbox.height() + 6))
+        popup_width = 280
+        popup_height = 260
+        screen = QApplication.screenAt(anchor)
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+
+        bounds = screen.availableGeometry()
+        x = max(bounds.left(), min(anchor.x(), bounds.right() - popup_width))
+        y = max(bounds.top(), min(anchor.y(), bounds.bottom() - popup_height))
+        self.due_popup.setGeometry(x, y, popup_width, popup_height)
+        self.due_popup.show()
+        self.due_popup.raise_()
+
+    def _hide_due_popup_if_outside(self) -> None:
+        if not self.due_popup.isVisible():
+            return
+
+        # QComboBox dropdown is a separate popup window; keep due popup alive while it is open.
+        if self.due_hour_combo.view().isVisible() or self.due_minute_combo.view().isVisible():
+            return
+
+        cursor_global = QCursor.pos()
+        due_local = self.enable_due_checkbox.mapFromGlobal(cursor_global)
+        over_due = self.enable_due_checkbox.rect().contains(due_local)
+        over_popup = self.due_popup.geometry().contains(cursor_global)
+        if over_due or over_popup:
+            return
+        self.due_popup.hide()
+
+    def _on_due_date_changed(self, selected_date: QDate) -> None:
+        self._due_date = selected_date
+
+    def _on_due_time_changed(self, _value: str) -> None:
+        hour = int(self.due_hour_combo.currentText())
+        minute = int(self.due_minute_combo.currentText())
+        self._due_time = QTime(hour, minute, 0)
+
+    def _is_due_soon(self, due_at: str | None, done: bool) -> bool:
+        if done or not due_at:
+            return False
+
+        due_time = QDateTime.fromString(due_at, Qt.ISODate)
+        if not due_time.isValid():
+            return False
+
+        now = QDateTime.currentDateTime()
+        soon_limit = now.addSecs(self._due_soon_minutes * 60)
+        return now <= due_time <= soon_limit
 
     def _refresh_list(self, keep_scroll: bool = False, scroll_to_bottom: bool = False) -> None:
         scroll_bar = self.todo_list.verticalScrollBar()
@@ -845,7 +1223,13 @@ class MainWindow(QMainWindow):
             item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             item.setFlags(item.flags() | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled | Qt.ItemIsSelectable)
 
-            row_widget = TodoRowWidget(todo.title, todo.done, self.todo_list)
+            row_widget = TodoRowWidget(
+                todo.title,
+                todo.due_at,
+                todo.done,
+                self._is_due_soon(todo.due_at, todo.done),
+                self.todo_list,
+            )
             row_widget.indicator.clicked.connect(
                 lambda _checked=False, current_item=item: self.toggle_todo(current_item)
             )
