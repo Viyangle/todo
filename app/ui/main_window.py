@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
@@ -27,7 +28,35 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import json
+import random
+from pathlib import Path
+
 from app.data.storage import TodoStorage
+
+TAROT_NAME_ZH = {
+    "The Fool": "愚者",
+    "The Magician": "魔术师",
+    "The High Priestess": "女祭司",
+    "The Empress": "女皇",
+    "The Emperor": "皇帝",
+    "The Lovers": "恋人",
+    "The Chariot": "战车",
+    "Strength": "力量",
+    "The Hermit": "隐者",
+    "Wheel of Fortune": "命运之轮",
+    "Justice": "正义",
+    "The Hanged Man": "倒吊人",
+    "Death": "死神",
+    "Temperance": "节制",
+    "The Devil": "恶魔",
+    "The Tower": "高塔",
+    "The Star": "星星",
+    "The Moon": "月亮",
+    "The Sun": "太阳",
+    "Judgement": "审判",
+    "The World": "世界",
+}
 
 
 class CheckIndicator(QWidget):
@@ -617,6 +646,7 @@ class MainWindow(QMainWindow):
         self._due_soon_minutes = self._load_due_warning_minutes()
         self._geometry_adjusting = False
         self._visible_corner_margin = 44
+        self._tarot_cards = self._load_tarot_cards()
 
         self.setWindowTitle("Todo")
         self.setMinimumSize(self._minimum_size)
@@ -628,6 +658,7 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_tray()
         self._refresh_list()
+        self._refresh_tarot_history()
 
     def _setup_ui(self) -> None:
         root = QWidget(self)
@@ -648,6 +679,8 @@ class MainWindow(QMainWindow):
         panel_layout.addWidget(self.title_bar)
 
         self.page_stack = QStackedWidget(self.panel)
+        self.page_stack.setFrameShape(QFrame.NoFrame)
+        self.page_stack.setLineWidth(0)
 
         self.main_page = QWidget(self.page_stack)
         main_page_layout = QVBoxLayout(self.main_page)
@@ -736,6 +769,9 @@ class MainWindow(QMainWindow):
         config_button = QPushButton("config")
         config_button.clicked.connect(self.show_settings_page)
 
+        tarot_button = QPushButton("tarot")
+        tarot_button.clicked.connect(self.show_tarot_page)
+
         delete_button = QPushButton("clear")
         delete_button.clicked.connect(self.delete_completed)
 
@@ -746,6 +782,7 @@ class MainWindow(QMainWindow):
 
         action_layout.addWidget(reset_button)
         action_layout.addWidget(config_button)
+        action_layout.addWidget(tarot_button)
         action_layout.addStretch()
         action_layout.addWidget(delete_button)
         action_layout.addWidget(refresh_button)
@@ -801,8 +838,172 @@ class MainWindow(QMainWindow):
         settings_action_layout.addWidget(save_button)
         settings_layout.addLayout(settings_action_layout)
 
+        self.tarot_page = QWidget(self.page_stack)
+        tarot_layout = QVBoxLayout(self.tarot_page)
+        tarot_layout.setContentsMargins(0, 0, 0, 0)
+        tarot_layout.setSpacing(10)
+
+        tarot_title = QLabel("Tarot")
+        tarot_title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        tarot_layout.addWidget(tarot_title)
+
+        tarot_hint = QLabel("Three-card spread: Past / Present / Future")
+        tarot_hint.setWordWrap(True)
+        tarot_hint.setStyleSheet("color: rgba(28, 37, 48, 170);")
+        tarot_layout.addWidget(tarot_hint)
+
+        self.tarot_question_edit = QLineEdit(self.tarot_page)
+        self.tarot_question_edit.setPlaceholderText("e.g. What should I focus on this afternoon?")
+        tarot_layout.addWidget(self.tarot_question_edit)
+
+        tarot_control_layout = QHBoxLayout()
+        tarot_control_layout.setSpacing(8)
+
+        draw_button = QPushButton("draw three cards")
+        draw_button.clicked.connect(self.draw_tarot_spread)
+        tarot_control_layout.addWidget(draw_button)
+
+        history_button = QPushButton("history")
+        history_button.clicked.connect(self.show_tarot_history_page)
+        tarot_control_layout.addWidget(history_button)
+        tarot_control_layout.addStretch()
+        tarot_layout.addLayout(tarot_control_layout)
+
+        self.tarot_card_panel = QFrame(self.tarot_page)
+        self.tarot_card_panel.setObjectName("tarotCardPanel")
+        tarot_card_layout = QVBoxLayout(self.tarot_card_panel)
+        tarot_card_layout.setContentsMargins(14, 14, 14, 14)
+        tarot_card_layout.setSpacing(8)
+
+        self.tarot_question_label = QLabel("Question: -")
+        self.tarot_question_label.setWordWrap(True)
+        self.tarot_question_label.setStyleSheet("color: rgba(28, 37, 48, 170);")
+        tarot_card_layout.addWidget(self.tarot_question_label)
+
+        self.tarot_spread_label = QLabel("Spread: Past / Present / Future")
+        self.tarot_spread_label.setStyleSheet("font-size: 15px; font-weight: 700;")
+        tarot_card_layout.addWidget(self.tarot_spread_label)
+
+        cards_grid = QGridLayout()
+        cards_grid.setHorizontalSpacing(10)
+        cards_grid.setVerticalSpacing(10)
+
+        self.tarot_past_box = QFrame(self.tarot_card_panel)
+        self.tarot_past_box.setObjectName("tarotCardBox")
+        past_layout = QVBoxLayout(self.tarot_past_box)
+        past_layout.setContentsMargins(10, 10, 10, 10)
+        self.tarot_past_title = QLabel("Past")
+        self.tarot_past_title.setStyleSheet("font-size: 13px; font-weight: 700;")
+        self.tarot_past_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tarot_past_title.setMinimumHeight(22)
+        self.tarot_past_name = QLabel("-")
+        self.tarot_past_name.setObjectName("tarotCardName")
+        self.tarot_past_name.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tarot_past_name.setMinimumHeight(30)
+        self.tarot_past_body = QLabel("No card yet.")
+        self.tarot_past_body.setWordWrap(True)
+        self.tarot_past_body.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        past_layout.addWidget(self.tarot_past_title)
+        past_layout.addWidget(self.tarot_past_name)
+        past_layout.addWidget(self.tarot_past_body)
+        past_layout.addStretch()
+
+        self.tarot_present_box = QFrame(self.tarot_card_panel)
+        self.tarot_present_box.setObjectName("tarotCardBox")
+        present_layout = QVBoxLayout(self.tarot_present_box)
+        present_layout.setContentsMargins(10, 10, 10, 10)
+        self.tarot_present_title = QLabel("Present")
+        self.tarot_present_title.setStyleSheet("font-size: 13px; font-weight: 700;")
+        self.tarot_present_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tarot_present_title.setMinimumHeight(22)
+        self.tarot_present_name = QLabel("-")
+        self.tarot_present_name.setObjectName("tarotCardName")
+        self.tarot_present_name.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tarot_present_name.setMinimumHeight(30)
+        self.tarot_present_body = QLabel("No card yet.")
+        self.tarot_present_body.setWordWrap(True)
+        self.tarot_present_body.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        present_layout.addWidget(self.tarot_present_title)
+        present_layout.addWidget(self.tarot_present_name)
+        present_layout.addWidget(self.tarot_present_body)
+        present_layout.addStretch()
+
+        self.tarot_future_box = QFrame(self.tarot_card_panel)
+        self.tarot_future_box.setObjectName("tarotCardBox")
+        future_layout = QVBoxLayout(self.tarot_future_box)
+        future_layout.setContentsMargins(10, 10, 10, 10)
+        self.tarot_future_title = QLabel("Future")
+        self.tarot_future_title.setStyleSheet("font-size: 13px; font-weight: 700;")
+        self.tarot_future_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tarot_future_title.setMinimumHeight(22)
+        self.tarot_future_name = QLabel("-")
+        self.tarot_future_name.setObjectName("tarotCardName")
+        self.tarot_future_name.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tarot_future_name.setMinimumHeight(30)
+        self.tarot_future_body = QLabel("No card yet.")
+        self.tarot_future_body.setWordWrap(True)
+        self.tarot_future_body.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        future_layout.addWidget(self.tarot_future_title)
+        future_layout.addWidget(self.tarot_future_name)
+        future_layout.addWidget(self.tarot_future_body)
+        future_layout.addStretch()
+
+        self.tarot_summary_box = QFrame(self.tarot_card_panel)
+        self.tarot_summary_box.setObjectName("tarotSummaryBox")
+        summary_layout = QVBoxLayout(self.tarot_summary_box)
+        summary_layout.setContentsMargins(10, 10, 10, 10)
+        self.tarot_summary_title = QLabel("Interpretation")
+        self.tarot_summary_title.setStyleSheet("font-size: 13px; font-weight: 700;")
+        self.tarot_summary_body = QLabel("Draw a spread to see the interpretation.")
+        self.tarot_summary_body.setWordWrap(True)
+        self.tarot_summary_body.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        summary_layout.addWidget(self.tarot_summary_title)
+        summary_layout.addWidget(self.tarot_summary_body)
+        summary_layout.addStretch()
+
+        cards_grid.addWidget(self.tarot_past_box, 0, 0, Qt.AlignTop)
+        cards_grid.addWidget(self.tarot_present_box, 0, 1, Qt.AlignTop)
+        cards_grid.addWidget(self.tarot_future_box, 0, 2, Qt.AlignTop)
+        cards_grid.addWidget(self.tarot_summary_box, 1, 0, 1, 3)
+        cards_grid.setColumnStretch(0, 1)
+        cards_grid.setColumnStretch(1, 1)
+        cards_grid.setColumnStretch(2, 1)
+        tarot_card_layout.addLayout(cards_grid)
+
+        tarot_layout.addWidget(self.tarot_card_panel)
+        tarot_layout.addStretch()
+
+        tarot_action_layout = QHBoxLayout()
+        tarot_back_button = QPushButton("back")
+        tarot_back_button.clicked.connect(self.show_main_page)
+        tarot_action_layout.addWidget(tarot_back_button)
+        tarot_action_layout.addStretch()
+        tarot_layout.addLayout(tarot_action_layout)
+
+        self.tarot_history_page = QWidget(self.page_stack)
+        tarot_history_layout = QVBoxLayout(self.tarot_history_page)
+        tarot_history_layout.setContentsMargins(0, 0, 0, 0)
+        tarot_history_layout.setSpacing(10)
+
+        tarot_history_title = QLabel("Tarot History")
+        tarot_history_title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        tarot_history_layout.addWidget(tarot_history_title)
+
+        self.tarot_history_list = QListWidget(self.tarot_history_page)
+        self.tarot_history_list.itemClicked.connect(self.show_tarot_history_item)
+        tarot_history_layout.addWidget(self.tarot_history_list)
+
+        tarot_history_action_layout = QHBoxLayout()
+        tarot_history_back_button = QPushButton("back")
+        tarot_history_back_button.clicked.connect(self.show_tarot_page)
+        tarot_history_action_layout.addWidget(tarot_history_back_button)
+        tarot_history_action_layout.addStretch()
+        tarot_history_layout.addLayout(tarot_history_action_layout)
+
         self.page_stack.addWidget(self.main_page)
         self.page_stack.addWidget(self.settings_page)
+        self.page_stack.addWidget(self.tarot_page)
+        self.page_stack.addWidget(self.tarot_history_page)
         self.page_stack.setCurrentWidget(self.main_page)
         panel_layout.addWidget(self.page_stack)
 
@@ -830,6 +1031,14 @@ class MainWindow(QMainWindow):
                 border: 1px solid rgba(255, 255, 255, 110);
                 border-radius: {self._corner_radius}px;
             }}
+            QStackedWidget {{
+                background: transparent;
+                border: none;
+            }}
+            QStackedWidget::pane {{
+                border: 0px;
+                background: transparent;
+            }}
             QLabel {{
                 color: rgb(28, 37, 48);
             }}
@@ -849,6 +1058,26 @@ class MainWindow(QMainWindow):
                 background-color: rgba(230, 240, 252, 244);
                 border: 1px solid rgba(255, 255, 255, 170);
                 border-radius: 14px;
+            }}
+            #tarotCardPanel {{
+                background-color: rgba(255, 255, 255, 92);
+                border: 1px solid rgba(255, 255, 255, 140);
+                border-radius: 14px;
+            }}
+            #tarotCardBox {{
+                background-color: rgba(236, 245, 255, 205);
+                border: 1px solid rgba(120, 170, 220, 210);
+                border-radius: 12px;
+            }}
+            #tarotCardName {{
+                color: rgb(24, 67, 112);
+                font-size: 18px;
+                font-weight: 800;
+            }}
+            #tarotSummaryBox {{
+                background-color: rgba(255, 231, 209, 208);
+                border: 1px solid rgba(236, 149, 92, 214);
+                border-radius: 12px;
             }}
             QCalendarWidget QWidget {{
                 alternate-background-color: rgba(200, 220, 242, 140);
@@ -962,6 +1191,14 @@ class MainWindow(QMainWindow):
         self.default_height_spin.setValue(self._default_size.height())
         self.warn_minutes_spin.setValue(self._due_soon_minutes)
         self.page_stack.setCurrentWidget(self.settings_page)
+
+    def show_tarot_page(self) -> None:
+        self.page_stack.setCurrentWidget(self.tarot_page)
+        self._refresh_tarot_history()
+
+    def show_tarot_history_page(self) -> None:
+        self._refresh_tarot_history()
+        self.page_stack.setCurrentWidget(self.tarot_history_page)
 
     def show_main_page(self) -> None:
         self.page_stack.setCurrentWidget(self.main_page)
@@ -1268,6 +1505,172 @@ class MainWindow(QMainWindow):
     def delete_completed(self) -> None:
         self.storage.delete_completed()
         self._refresh_list(keep_scroll=True)
+
+    def _load_tarot_cards(self) -> list[dict[str, object]]:
+        cards_path = Path(__file__).resolve().parent.parent / "data" / "tarot_cards.json"
+        try:
+            raw_text = cards_path.read_text(encoding="utf-8")
+            cards = json.loads(raw_text)
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return []
+
+        if not isinstance(cards, list):
+            return []
+
+        valid_cards: list[dict[str, object]] = []
+        for entry in cards:
+            if not isinstance(entry, dict):
+                continue
+            if not entry.get("name"):
+                continue
+            if not entry.get("upright_meaning"):
+                continue
+            if not entry.get("reversed_meaning"):
+                continue
+            valid_cards.append(entry)
+        return valid_cards
+
+    def _draw_one_tarot_card(self, card_data: dict[str, object], position: str) -> dict[str, str]:
+        orientation = random.choice(("upright", "reversed"))
+        raw_name = str(card_data.get("name", "Unknown Card"))
+        name = TAROT_NAME_ZH.get(raw_name, raw_name)
+        upright_meaning = str(card_data.get("upright_meaning", ""))
+        reversed_meaning = str(card_data.get("reversed_meaning", ""))
+        upright_keywords = card_data.get("upright_keywords", [])
+        reversed_keywords = card_data.get("reversed_keywords", [])
+
+        if orientation == "upright":
+            orientation_text = "Upright (正位)"
+            meaning = upright_meaning
+            keywords_raw = upright_keywords
+        else:
+            orientation_text = "Reversed (逆位)"
+            meaning = reversed_meaning
+            keywords_raw = reversed_keywords
+
+        if isinstance(keywords_raw, list):
+            keywords = [str(keyword).strip() for keyword in keywords_raw if str(keyword).strip()]
+            keywords_text = " / ".join(keywords)
+        else:
+            keywords_text = str(keywords_raw)
+
+        return {
+            "position": position,
+            "name": name,
+            "orientation": orientation_text,
+            "keywords": keywords_text,
+            "meaning": meaning,
+        }
+
+    def draw_tarot_spread(self) -> None:
+        if not self._tarot_cards:
+            QMessageBox.warning(self, "Tarot", "Tarot deck is unavailable.")
+            return
+
+        question = self.tarot_question_edit.text().strip()
+        if len(self._tarot_cards) >= 3:
+            selected_cards = random.sample(self._tarot_cards, 3)
+        else:
+            selected_cards = [random.choice(self._tarot_cards) for _ in range(3)]
+
+        spread_cards = [
+            self._draw_one_tarot_card(selected_cards[0], "Past"),
+            self._draw_one_tarot_card(selected_cards[1], "Present"),
+            self._draw_one_tarot_card(selected_cards[2], "Future"),
+        ]
+
+        summary = self._build_tarot_summary(spread_cards)
+        self.storage.add_tarot_reading(
+            spread_type="past_present_future",
+            cards=spread_cards,
+            summary=summary,
+            question=question or None,
+        )
+        self._show_tarot_reading(question, spread_cards, summary)
+        self._refresh_tarot_history()
+
+    def _build_tarot_summary(self, cards: list[dict[str, str]]) -> str:
+        present_meaning = cards[1]["meaning"] if len(cards) > 1 else ""
+        future_meaning = cards[2]["meaning"] if len(cards) > 2 else ""
+        return f"Current focus: {present_meaning} Next trend: {future_meaning}"
+
+    def _show_tarot_reading(self, question: str, cards: list[dict[str, str]], summary: str) -> None:
+        question_text = question if question else "-"
+        self.tarot_question_label.setText(f"Question: {question_text}")
+        self.tarot_spread_label.setText("Spread: Past / Present / Future")
+
+        by_position = {card.get("position", ""): card for card in cards}
+        past = by_position.get("Past", {})
+        present = by_position.get("Present", {})
+        future = by_position.get("Future", {})
+
+        self.tarot_past_name.setText(str(past.get("name", "-")))
+        self.tarot_present_name.setText(str(present.get("name", "-")))
+        self.tarot_future_name.setText(str(future.get("name", "-")))
+
+        self.tarot_past_body.setText(
+            f"{past.get('orientation', '-')}\n"
+            f"Keywords: {past.get('keywords', '-')}\n"
+            f"{past.get('meaning', '-')}"
+        )
+        self.tarot_present_body.setText(
+            f"{present.get('orientation', '-')}\n"
+            f"Keywords: {present.get('keywords', '-')}\n"
+            f"{present.get('meaning', '-')}"
+        )
+        self.tarot_future_body.setText(
+            f"{future.get('orientation', '-')}\n"
+            f"Keywords: {future.get('keywords', '-')}\n"
+            f"{future.get('meaning', '-')}"
+        )
+        self.tarot_summary_body.setText(summary)
+
+    def _refresh_tarot_history(self) -> None:
+        if not hasattr(self, "tarot_history_list"):
+            return
+
+        self.tarot_history_list.clear()
+        for reading in self.storage.list_tarot_readings(limit=50):
+            question = reading.question if reading.question else "No question"
+            preview = f"{reading.created_at} | {question}"
+            item = QListWidgetItem(preview)
+            item.setData(Qt.UserRole, reading.id)
+            self.tarot_history_list.addItem(item)
+
+    def show_tarot_history_item(self, item: QListWidgetItem) -> None:
+        reading_id = item.data(Qt.UserRole)
+        if reading_id is None:
+            return
+
+        readings = self.storage.list_tarot_readings(limit=200)
+        selected = next((reading for reading in readings if reading.id == int(reading_id)), None)
+        if selected is None:
+            return
+
+        try:
+            cards_raw = json.loads(selected.cards_json)
+        except json.JSONDecodeError:
+            QMessageBox.warning(self, "Tarot", "History record data is corrupted.")
+            return
+
+        cards: list[dict[str, str]] = []
+        if isinstance(cards_raw, list):
+            for entry in cards_raw:
+                if not isinstance(entry, dict):
+                    continue
+                cards.append(
+                    {
+                        "position": str(entry.get("position", "")),
+                        "name": TAROT_NAME_ZH.get(str(entry.get("name", "")), str(entry.get("name", ""))),
+                        "orientation": str(entry.get("orientation", "")),
+                        "keywords": str(entry.get("keywords", "")),
+                        "meaning": str(entry.get("meaning", "")),
+                    }
+                )
+
+        question = selected.question if selected.question else ""
+        self._show_tarot_reading(question, cards, selected.summary)
+        self.page_stack.setCurrentWidget(self.tarot_page)
 
 
 

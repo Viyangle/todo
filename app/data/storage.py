@@ -1,8 +1,9 @@
-﻿import sqlite3
+import json
+import sqlite3
 from pathlib import Path
 from typing import Iterable, List
 
-from app.core.models import TodoItem
+from app.core.models import TarotReading, TodoItem
 
 
 class TodoStorage:
@@ -28,6 +29,18 @@ class TodoStorage:
                     due_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tarot_readings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question TEXT,
+                    spread_type TEXT NOT NULL,
+                    cards_json TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -114,3 +127,63 @@ class TodoStorage:
         with self._connect() as conn:
             conn.execute("DELETE FROM todos WHERE done = 1")
             conn.commit()
+
+    def add_tarot_reading(
+        self,
+        spread_type: str,
+        cards: list[dict[str, str]],
+        summary: str,
+        question: str | None = None,
+    ) -> TarotReading:
+        cards_json = json.dumps(cards, ensure_ascii=False)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO tarot_readings (question, spread_type, cards_json, summary)
+                VALUES (?, ?, ?, ?)
+                """,
+                (question, spread_type, cards_json, summary),
+            )
+            reading_id = int(cursor.lastrowid)
+            row = conn.execute(
+                """
+                SELECT id, question, spread_type, cards_json, summary, created_at
+                FROM tarot_readings
+                WHERE id = ?
+                """,
+                (reading_id,),
+            ).fetchone()
+            conn.commit()
+
+        return TarotReading(
+            id=row["id"],
+            question=row["question"],
+            spread_type=row["spread_type"],
+            cards_json=row["cards_json"],
+            summary=row["summary"],
+            created_at=row["created_at"],
+        )
+
+    def list_tarot_readings(self, limit: int = 50) -> List[TarotReading]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, question, spread_type, cards_json, summary, created_at
+                FROM tarot_readings
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (max(1, limit),),
+            ).fetchall()
+
+        return [
+            TarotReading(
+                id=row["id"],
+                question=row["question"],
+                spread_type=row["spread_type"],
+                cards_json=row["cards_json"],
+                summary=row["summary"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
