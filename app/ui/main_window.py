@@ -32,6 +32,7 @@ import json
 import random
 from pathlib import Path
 
+from app.core.tarot_interpreter import TarotInterpreter
 from app.data.storage import TodoStorage
 
 TAROT_NAME_ZH = {
@@ -640,13 +641,14 @@ class MainWindow(QMainWindow):
         self._is_quitting = False
         self._snap_margin = 24
         self._corner_radius = 22
-        self._minimum_size = QSize(400, 480)
-        self._fallback_default_size = QSize(400, 520)
+        self._minimum_size = QSize(470, 480)
+        self._fallback_default_size = QSize(470, 520)
         self._default_size = self._load_default_size()
         self._due_soon_minutes = self._load_due_warning_minutes()
         self._geometry_adjusting = False
         self._visible_corner_margin = 44
         self._tarot_cards = self._load_tarot_cards()
+        self._tarot_interpreter = TarotInterpreter()
 
         self.setWindowTitle("Todo")
         self.setMinimumSize(self._minimum_size)
@@ -863,10 +865,11 @@ class MainWindow(QMainWindow):
         draw_button.clicked.connect(self.draw_tarot_spread)
         tarot_control_layout.addWidget(draw_button)
 
+        tarot_control_layout.addStretch()
+
         history_button = QPushButton("history")
         history_button.clicked.connect(self.show_tarot_history_page)
         tarot_control_layout.addWidget(history_button)
-        tarot_control_layout.addStretch()
         tarot_layout.addLayout(tarot_control_layout)
 
         self.tarot_card_panel = QFrame(self.tarot_page)
@@ -957,6 +960,7 @@ class MainWindow(QMainWindow):
         self.tarot_summary_body = QLabel("Draw a spread to see the interpretation.")
         self.tarot_summary_body.setWordWrap(True)
         self.tarot_summary_body.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.tarot_summary_body.setStyleSheet("font-size: 15px;")
         summary_layout.addWidget(self.tarot_summary_title)
         summary_layout.addWidget(self.tarot_summary_body)
         summary_layout.addStretch()
@@ -1579,7 +1583,7 @@ class MainWindow(QMainWindow):
             self._draw_one_tarot_card(selected_cards[2], "Future"),
         ]
 
-        summary = self._build_tarot_summary(spread_cards)
+        summary = self._build_tarot_summary(question, spread_cards)
         self.storage.add_tarot_reading(
             spread_type="past_present_future",
             cards=spread_cards,
@@ -1589,10 +1593,8 @@ class MainWindow(QMainWindow):
         self._show_tarot_reading(question, spread_cards, summary)
         self._refresh_tarot_history()
 
-    def _build_tarot_summary(self, cards: list[dict[str, str]]) -> str:
-        present_meaning = cards[1]["meaning"] if len(cards) > 1 else ""
-        future_meaning = cards[2]["meaning"] if len(cards) > 2 else ""
-        return f"Current focus: {present_meaning} Next trend: {future_meaning}"
+    def _build_tarot_summary(self, question: str, cards: list[dict[str, str]]) -> str:
+        return self._tarot_interpreter.build_summary(question=question, cards=cards)
 
     def _show_tarot_reading(self, question: str, cards: list[dict[str, str]], summary: str) -> None:
         question_text = question if question else "-"
@@ -1610,18 +1612,15 @@ class MainWindow(QMainWindow):
 
         self.tarot_past_body.setText(
             f"{past.get('orientation', '-')}\n"
-            f"Keywords: {past.get('keywords', '-')}\n"
-            f"{past.get('meaning', '-')}"
+            f"Keywords: {past.get('keywords', '-')}"
         )
         self.tarot_present_body.setText(
             f"{present.get('orientation', '-')}\n"
-            f"Keywords: {present.get('keywords', '-')}\n"
-            f"{present.get('meaning', '-')}"
+            f"Keywords: {present.get('keywords', '-')}"
         )
         self.tarot_future_body.setText(
             f"{future.get('orientation', '-')}\n"
-            f"Keywords: {future.get('keywords', '-')}\n"
-            f"{future.get('meaning', '-')}"
+            f"Keywords: {future.get('keywords', '-')}"
         )
         self.tarot_summary_body.setText(summary)
 
