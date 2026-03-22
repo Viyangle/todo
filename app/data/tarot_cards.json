@@ -1,0 +1,149 @@
+[
+  {
+    "name": "The Fool",
+    "upright_keywords": ["开始", "勇气", "自由", "探索"],
+    "reversed_keywords": ["冲动", "犹豫", "准备不足", "逃避"],
+    "upright_meaning": "你正站在新旅程的起点。先迈出小一步，行动会带来清晰感。",
+    "reversed_meaning": "现在更需要检查风险和边界。把热情落到具体计划，再出发。"
+  },
+  {
+    "name": "The Magician",
+    "upright_keywords": ["创造", "执行", "资源整合", "专注"],
+    "reversed_keywords": ["分心", "操之过急", "空转", "不落地"],
+    "upright_meaning": "你手上的资源已经足够，关键是聚焦一个目标并立即执行。",
+    "reversed_meaning": "别把精力分散在太多方向。先做最小可交付成果，避免只想不做。"
+  },
+  {
+    "name": "The High Priestess",
+    "upright_keywords": ["直觉", "观察", "沉静", "内在答案"],
+    "reversed_keywords": ["信息噪音", "回避真相", "迟疑", "封闭"],
+    "upright_meaning": "先暂停外部干扰，听听直觉。你已经知道什么最重要。",
+    "reversed_meaning": "你可能被杂音带偏。回到事实本身，区分真实需求和情绪反应。"
+  },
+  {
+    "name": "The Empress",
+    "upright_keywords": ["滋养", "成长", "丰盛", "关怀"],
+    "reversed_keywords": ["过度消耗", "依赖", "失衡", "忽视自我"],
+    "upright_meaning": "适合推进能长期生长的事情，给它稳定投入和耐心。",
+    "reversed_meaning": "先照顾自己的状态，再继续产出。透支会降低后续效率。"
+  },
+  {
+    "name": "The Emperor",
+    "upright_keywords": ["结构", "秩序", "边界", "决断"],
+    "reversed_keywords": ["僵化", "控制欲", "拖延决策", "失序"],
+    "upright_meaning": "通过规则和节奏来提升效率。把任务拆分并设定明确截止点。",
+    "reversed_meaning": "规则太紧或太乱都会卡住你。调整到可执行而非完美的标准。"
+  },
+  {
+    "name": "The Lovers",
+    "upright_keywords": ["选择", "价值观", "连接", "一致性"],
+    "reversed_keywords": ["摇摆", "冲突", "价值偏离", "关系消耗"],
+    "upright_meaning": "做一个与你核心价值一致的选择，短期不舒服也值得。",
+    "reversed_meaning": "你可能在迎合而非选择。先确认自己真正想要什么。"
+  },
+  {
+    "name": "The Chariot",
+    "upright_keywords": ["推进", "掌控", "胜利", "意志力"],
+    "reversed_keywords": ["失控", "急躁", "方向偏移", "内耗"],
+    "upright_meaning": "现在是推进阶段。给自己一个明确终点，集中火力向前。",
+    "reversed_meaning": "速度太快但方向不清。先校准路线，再加速。"
+  },
+  {
+    "name": "Strength",
+    "upright_keywords": ["耐心", "稳定", "温和力量", "自控"],
+    "reversed_keywords": ["自我怀疑", "情绪失衡", "强撑", "泄气"],
+    "upright_meaning": "你不需要硬扛，用稳定节奏和温和自律就能赢下局面。",
+    "reversed_meaning": "先恢复情绪和体力，不必一次解决全部问题。"
+  },
+  {
+    "name": "The Hermit",
+    "upright_keywords": ["独处", "复盘", "深度思考", "内省"],
+    "reversed_keywords": ["封闭", "过度独行", "停滞", "逃避沟通"],
+    "upright_meaning": "给自己一段安静时间，梳理真正的优先级。",
+    "reversed_meaning": "别一直闷头。适当求助或沟通能更快破局。"
+  },
+  {
+    "name": "Wheel of Fortune",
+    "upright_keywords": ["转机", "周期", "变化", "机会"],
+    "reversed_keywords": ["阻滞", "反复", "时机未到", "被动"],
+    "upright_meaning": "局势正在变化，顺势调整策略比硬抗更有效。",
+    "reversed_meaning": "短期波动较大，先稳住基本盘，等待更好窗口。"
+  },
+  {
+    "name": "Justice",
+    "upright_keywords": ["平衡", "公平", "责任", "清晰"],
+    "reversed_keywords": ["偏见", "失衡", "逃避责任", "判断失准"],
+    "upright_meaning": "按事实和原则做决定，明确责任边界会让事情顺畅。",
+    "reversed_meaning": "现在可能情绪先于判断。先补充信息，再定结论。"
+  },
+  {
+    "name": "The Hanged Man",
+    "upright_keywords": ["暂停", "换位", "等待", "新视角"],
+    "reversed_keywords": ["拖延", "僵住", "无效等待", "抗拒改变"],
+    "upright_meaning": "暂缓并不等于失败。换个角度后，你会看到新解法。",
+    "reversed_meaning": "你可能把拖延当成等待。设定一个明确的下一步动作。"
+  },
+  {
+    "name": "Death",
+    "upright_keywords": ["结束", "重启", "更新", "断舍离"],
+    "reversed_keywords": ["抗拒结束", "旧模式", "停滞", "恐惧变化"],
+    "upright_meaning": "该结束的阶段就让它结束，腾出空间给新路径。",
+    "reversed_meaning": "不放手会继续消耗你。先从最小的告别开始。"
+  },
+  {
+    "name": "Temperance",
+    "upright_keywords": ["调和", "节奏", "耐心", "整合"],
+    "reversed_keywords": ["失衡", "极端", "节奏混乱", "过度消耗"],
+    "upright_meaning": "通过稳步整合让事情回归顺滑，慢一点反而更快。",
+    "reversed_meaning": "你的节奏可能过满或过散。先恢复中间地带。"
+  },
+  {
+    "name": "The Devil",
+    "upright_keywords": ["束缚", "诱惑", "惯性", "依赖"],
+    "reversed_keywords": ["解脱", "觉察", "打破循环", "戒断"],
+    "upright_meaning": "识别一个正在绑住你的习惯，今天先削弱它 10%。",
+    "reversed_meaning": "你已经看到问题所在，继续保持边界就能脱离循环。"
+  },
+  {
+    "name": "The Tower",
+    "upright_keywords": ["突变", "真相暴露", "重建", "清零"],
+    "reversed_keywords": ["延迟爆发", "抗拒改变", "内部震荡", "脆弱修补"],
+    "upright_meaning": "旧结构不再有效，短痛换长稳，主动重建更有利。",
+    "reversed_meaning": "你可能在勉强维持。小范围重构比全面崩盘更可控。"
+  },
+  {
+    "name": "The Star",
+    "upright_keywords": ["希望", "修复", "信心", "愿景"],
+    "reversed_keywords": ["低迷", "怀疑", "信念不足", "失焦"],
+    "upright_meaning": "保持对长期方向的信心，今天做一件靠近愿景的小事。",
+    "reversed_meaning": "情绪低谷不代表方向错误。先做最容易完成的一步。"
+  },
+  {
+    "name": "The Moon",
+    "upright_keywords": ["潜意识", "不确定", "直觉", "迷雾"],
+    "reversed_keywords": ["迷雾散去", "看清", "焦虑缓解", "真相浮现"],
+    "upright_meaning": "目前信息不完整，先避免重决策，记录直觉和线索。",
+    "reversed_meaning": "你正在看清关键点，适合做一次明确选择。"
+  },
+  {
+    "name": "The Sun",
+    "upright_keywords": ["成功", "清晰", "活力", "积极推进"],
+    "reversed_keywords": ["短暂阴影", "过度乐观", "热情衰减", "延迟收获"],
+    "upright_meaning": "非常适合推进重要任务，公开表达会带来正反馈。",
+    "reversed_meaning": "别急着庆祝，先把细节收尾，成果会更稳。"
+  },
+  {
+    "name": "Judgement",
+    "upright_keywords": ["觉醒", "决定", "复盘", "召唤"],
+    "reversed_keywords": ["自我否定", "拖延决断", "错过信号", "旧账缠身"],
+    "upright_meaning": "你已经准备好进入下一阶段，做那个关键决定。",
+    "reversed_meaning": "不要被过去牵制。先原谅自己，再做当前最对的事。"
+  },
+  {
+    "name": "The World",
+    "upright_keywords": ["完成", "整合", "里程碑", "升级"],
+    "reversed_keywords": ["未竟之事", "收尾拖延", "循环未闭合", "分散"],
+    "upright_meaning": "一个周期正在完成，适合总结并开启下一段目标。",
+    "reversed_meaning": "先完成收尾动作，再开启新计划，避免两头消耗。"
+  }
+]

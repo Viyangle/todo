@@ -24,10 +24,12 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStyle,
     QSystemTrayIcon,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+import html
 import json
 import random
 from pathlib import Path
@@ -58,7 +60,6 @@ TAROT_NAME_ZH = {
     "Judgement": "审判",
     "The World": "世界",
 }
-
 
 class CheckIndicator(QWidget):
     clicked = Signal()
@@ -648,7 +649,9 @@ class MainWindow(QMainWindow):
         self._geometry_adjusting = False
         self._visible_corner_margin = 44
         self._tarot_cards = self._load_tarot_cards()
+        self._philosopher_quotes = self._load_philosopher_quotes()
         self._tarot_interpreter = TarotInterpreter()
+        self._current_quote = ""
 
         self.setWindowTitle("Todo")
         self.setMinimumSize(self._minimum_size)
@@ -659,7 +662,7 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._setup_tray()
-        self._refresh_list()
+        self.refresh_main_page()
         self._refresh_tarot_history()
 
     def _setup_ui(self) -> None:
@@ -764,6 +767,14 @@ class MainWindow(QMainWindow):
         self.todo_list.order_changed.connect(self.persist_current_order)
         main_page_layout.addWidget(self.todo_list)
 
+        self.quote_box = QTextEdit(self.main_page)
+        self.quote_box.setReadOnly(True)
+        self.quote_box.setObjectName("quoteBox")
+        self.quote_box.setFixedHeight(108)
+        self.quote_box.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.quote_box.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        main_page_layout.addWidget(self.quote_box)
+
         action_layout = QHBoxLayout()
         reset_button = QPushButton("default")
         reset_button.clicked.connect(self.restore_default_size)
@@ -778,7 +789,7 @@ class MainWindow(QMainWindow):
         delete_button.clicked.connect(self.delete_completed)
 
         refresh_button = QPushButton("refresh")
-        refresh_button.clicked.connect(self._refresh_list)
+        refresh_button.clicked.connect(self.refresh_main_page)
 
         self.resize_handle = ResizeHandle(self, self.panel)
 
@@ -1115,6 +1126,14 @@ class MainWindow(QMainWindow):
             }}
             QListWidget::item:selected {{
                 background: transparent;
+            }}
+            #quoteBox {{
+                background-color: rgba(255, 248, 240, 128);
+                border: 1px solid rgba(236, 149, 92, 140);
+                border-radius: 16px;
+                color: rgb(68, 50, 36);
+                padding: 10px 12px;
+                font-size: 13px;
             }}
             QPushButton {{
                 background-color: rgba(73, 109, 153, 158);
@@ -1453,6 +1472,40 @@ class MainWindow(QMainWindow):
         soon_limit = now.addSecs(self._due_soon_minutes * 60)
         return now <= due_time <= soon_limit
 
+    def refresh_main_page(self) -> None:
+        self._refresh_list()
+        self._refresh_quote()
+
+    def _refresh_quote(self) -> None:
+        available_quotes = [
+            quote for quote in self._philosopher_quotes
+            if self._format_quote_text(quote) != self._current_quote
+        ]
+        if not available_quotes:
+            available_quotes = self._philosopher_quotes[:]
+
+        selected = random.choice(available_quotes) if available_quotes else None
+        self._current_quote = self._format_quote_text(selected) if selected else "<div>No quotes available.</div>"
+        self.quote_box.setHtml(self._current_quote)
+
+    def _format_quote_text(self, quote_entry: dict[str, str] | None) -> str:
+        if not quote_entry:
+            return "<div>No quotes available.</div>"
+
+        author = quote_entry.get("author", "").strip()
+        quote = quote_entry.get("quote", "").strip()
+        quote_html = html.escape(quote)
+        author_html = html.escape(author)
+
+        return (
+            "<div style='font-size:13px; line-height:1.5;'>"
+            f"{quote_html}"
+            "</div>"
+            "<div style='font-size:13px; line-height:1.4; text-align:right; margin-top:6px;'>"
+            f"——{author_html}"
+            "</div>"
+        )
+
     def _refresh_list(self, keep_scroll: bool = False, scroll_to_bottom: bool = False) -> None:
         scroll_bar = self.todo_list.verticalScrollBar()
         previous_scroll = scroll_bar.value()
@@ -1533,6 +1586,37 @@ class MainWindow(QMainWindow):
                 continue
             valid_cards.append(entry)
         return valid_cards
+
+    def _load_philosopher_quotes(self) -> list[dict[str, str]]:
+        quotes_path = Path(__file__).resolve().parent.parent / "data" / "philosopher_quotes.json"
+        try:
+            raw_text = quotes_path.read_text(encoding="utf-8")
+            quotes = json.loads(raw_text)
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return []
+
+        if not isinstance(quotes, list):
+            return []
+
+        valid_quotes: list[dict[str, str]] = []
+        for entry in quotes:
+            if not isinstance(entry, dict):
+                continue
+
+            author = str(entry.get("author", "")).strip()
+            quote = str(entry.get("quote", "")).strip()
+            source = str(entry.get("source", "")).strip()
+            if not author or not quote:
+                continue
+
+            valid_quotes.append(
+                {
+                    "author": author,
+                    "quote": quote,
+                    "source": source,
+                }
+            )
+        return valid_quotes
 
     def _draw_one_tarot_card(self, card_data: dict[str, object], position: str) -> dict[str, str]:
         orientation = random.choice(("upright", "reversed"))

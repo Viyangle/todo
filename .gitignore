@@ -1,4 +1,33 @@
+# IDE
 .idea/
+.vscode/
+
+# Python cache and tooling
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+*.so
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local runtime data
 data/*.db
+*.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# OS files
+.DS_Store
+Thumbs.db
