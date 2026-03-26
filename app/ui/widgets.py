@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QElapsedTimer, QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -248,6 +250,344 @@ class ResizeHandle(QWidget):
         painter.drawLine(6, 12, 12, 6)
         painter.drawLine(9, 15, 15, 9)
         painter.drawLine(12, 18, 18, 12)
+
+
+class QuoteBoxWidget(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._quote = "No quotes available."
+        self._author = ""
+        self.setObjectName("quoteBox")
+        self.setFixedHeight(56)
+
+    def set_quote(self, quote: str, author: str = "") -> None:
+        self._quote = quote.strip() or "No quotes available."
+        self._author = author.strip()
+        self.update()
+
+    def _split_two_lines(
+        self,
+        text: str,
+        first_width: int,
+        second_width: int,
+        metrics: QFontMetrics,
+    ) -> tuple[str, str]:
+        compact = " ".join(text.split())
+        if not compact:
+            return "", ""
+
+        def take_prefix(source: str, max_width: int) -> tuple[str, str]:
+            if max_width <= 0:
+                return "", source
+
+            buffer = ""
+            index = 0
+            for index, char in enumerate(source):
+                candidate = buffer + char
+                if buffer and metrics.horizontalAdvance(candidate) > max_width:
+                    break
+                buffer = candidate
+            else:
+                return buffer.rstrip(), ""
+
+            remainder = source[index:].lstrip()
+            return buffer.rstrip(), remainder
+
+        first_line, remainder = take_prefix(compact, first_width)
+        if not remainder:
+            return first_line, ""
+
+        second_line, overflow = take_prefix(remainder, second_width)
+        if overflow:
+            second_line = metrics.elidedText(remainder, Qt.ElideRight, second_width)
+
+        return first_line, second_line
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        del event
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(255, 248, 240, 128))
+        painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 16, 16)
+
+        border_pen = QPen(QColor(236, 149, 92, 140), 1)
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 16, 16)
+
+        content_rect = rect.adjusted(12, 8, -12, -8)
+        quote_font = QFont(self.font())
+        quote_font.setPointSize(10)
+        painter.setFont(quote_font)
+        painter.setPen(QColor(68, 50, 36))
+
+        line_height = QFontMetrics(quote_font).lineSpacing()
+        author_text = f"——{self._author}" if self._author else ""
+
+        author_font = QFont(quote_font)
+        author_font.setBold(True)
+        author_metrics = QFontMetrics(author_font)
+        author_width = author_metrics.horizontalAdvance(author_text) if author_text else 0
+        reserved_width = author_width + 6 if author_text else 0
+
+        first_line_rect = QRect(
+            content_rect.left(),
+            content_rect.top(),
+            content_rect.width(),
+            line_height,
+        )
+        second_line_rect = QRect(
+            content_rect.left(),
+            content_rect.top() + line_height,
+            max(0, content_rect.width() - reserved_width),
+            line_height,
+        )
+
+        quote_metrics = QFontMetrics(quote_font)
+        first_line_text, second_line_text = self._split_two_lines(
+            self._quote,
+            first_line_rect.width(),
+            second_line_rect.width(),
+            quote_metrics,
+        )
+
+        painter.drawText(first_line_rect, Qt.AlignLeft | Qt.AlignVCenter, first_line_text)
+        if second_line_text:
+            painter.drawText(second_line_rect, Qt.AlignLeft | Qt.AlignVCenter, second_line_text)
+
+        if author_text:
+            painter.setFont(author_font)
+            painter.drawText(
+                QRect(
+                    content_rect.left(),
+                    content_rect.top() + line_height,
+                    content_rect.width(),
+                    line_height,
+                ),
+                Qt.AlignRight | Qt.AlignVCenter,
+                author_text,
+            )
+
+    def sizeHint(self) -> QSize:
+        return QSize(260, 56)
+
+
+class MemoryCardButton(QPushButton):
+    def __init__(self, value: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.value = value
+        self.revealed = False
+        self.matched = False
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumSize(56, 56)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setText("")
+
+    def reset_state(self) -> None:
+        self.revealed = False
+        self.matched = False
+        self.setEnabled(True)
+        self.update()
+
+    def reveal(self) -> None:
+        self.revealed = True
+        self.update()
+
+    def hide_face(self) -> None:
+        if self.matched:
+            return
+        self.revealed = False
+        self.update()
+
+    def mark_matched(self) -> None:
+        self.matched = True
+        self.revealed = True
+        self.setEnabled(False)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        del event
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+
+        if self.matched:
+            fill = QColor(195, 236, 213)
+            border = QColor(111, 179, 132)
+        elif self.revealed:
+            fill = QColor(255, 244, 222)
+            border = QColor(219, 162, 79)
+        else:
+            fill = QColor(231, 241, 253)
+            border = QColor(116, 162, 215)
+
+        painter.setPen(QPen(border, 1.4))
+        painter.setBrush(fill)
+        painter.drawRoundedRect(rect, 12, 12)
+
+        if self.revealed:
+            font = QFont(self.font())
+            font.setPointSize(15)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor(47, 59, 72))
+            painter.drawText(rect, Qt.AlignCenter, str(self.value))
+            return
+
+        painter.setClipRect(rect.adjusted(6, 6, -6, -6))
+        grid_pen = QPen(QColor(140, 176, 217, 190), 1)
+        painter.setPen(grid_pen)
+        step = max(10, min(rect.width(), rect.height()) // 4)
+        x = rect.left() - (rect.left() % step)
+        while x <= rect.right():
+            painter.drawLine(x, rect.top(), x, rect.bottom())
+            x += step
+        y = rect.top() - (rect.top() % step)
+        while y <= rect.bottom():
+            painter.drawLine(rect.left(), y, rect.right(), y)
+            y += step
+
+    def sizeHint(self) -> QSize:
+        return QSize(64, 64)
+
+
+class MemoryGameWidget(QWidget):
+    completed = Signal(int)
+    time_changed = Signal(str)
+
+    DIFFICULTIES: dict[str, tuple[int, int]] = {
+        "easy": (3, 4),
+        "normal": (4, 4),
+        "hard": (4, 5),
+    }
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._difficulty = "normal"
+        self._buttons: list[MemoryCardButton] = []
+        self._open_cards: list[MemoryCardButton] = []
+        self._matched_pairs = 0
+        self._started = False
+        self._busy = False
+        self._elapsed = QElapsedTimer()
+
+        self._layout = QGridLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setHorizontalSpacing(8)
+        self._layout.setVerticalSpacing(8)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(100)
+        self._timer.timeout.connect(self._emit_time)
+
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(550)
+        self._hide_timer.timeout.connect(self._hide_open_cards)
+
+        self._emit_time()
+
+    def current_difficulty(self) -> str:
+        return self._difficulty
+
+    def is_running(self) -> bool:
+        return self._started and self._timer.isActive()
+
+    def stop(self) -> None:
+        self._timer.stop()
+        self._hide_timer.stop()
+        self._busy = False
+
+    def start_new_game(self, difficulty: str) -> None:
+        self.stop()
+        self._difficulty = difficulty if difficulty in self.DIFFICULTIES else "normal"
+        self._open_cards = []
+        self._matched_pairs = 0
+        self._started = True
+        self._busy = False
+        self._rebuild_board()
+        self._elapsed.restart()
+        self._timer.start()
+        self._emit_time()
+
+    def _rebuild_board(self) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        self._buttons.clear()
+
+        rows, columns = self.DIFFICULTIES[self._difficulty]
+        pair_count = rows * columns // 2
+        values = list(range(1, pair_count + 1)) * 2
+        random.shuffle(values)
+
+        for index, value in enumerate(values):
+            button = MemoryCardButton(value, self)
+            button.clicked.connect(lambda _checked=False, current=button: self._handle_card_click(current))
+            row = index // columns
+            column = index % columns
+            self._layout.addWidget(button, row, column)
+            self._buttons.append(button)
+
+        for row in range(rows):
+            self._layout.setRowStretch(row, 1)
+        for column in range(columns):
+            self._layout.setColumnStretch(column, 1)
+
+    def _handle_card_click(self, button: MemoryCardButton) -> None:
+        if self._busy or button.matched or button.revealed:
+            return
+
+        button.reveal()
+        self._open_cards.append(button)
+
+        if len(self._open_cards) < 2:
+            return
+
+        first, second = self._open_cards
+        if first.value == second.value:
+            first.mark_matched()
+            second.mark_matched()
+            self._open_cards = []
+            self._matched_pairs += 1
+            if self._matched_pairs == len(self._buttons) // 2:
+                elapsed_ms = self.elapsed_ms()
+                self.stop()
+                self.completed.emit(elapsed_ms)
+            return
+
+        self._busy = True
+        self._hide_timer.start()
+
+    def _hide_open_cards(self) -> None:
+        for button in self._open_cards:
+            button.hide_face()
+        self._open_cards = []
+        self._busy = False
+
+    def elapsed_ms(self) -> int:
+        if not self._started or not self._elapsed.isValid():
+            return 0
+        return max(0, self._elapsed.elapsed())
+
+    def _emit_time(self) -> None:
+        self.time_changed.emit(self.format_elapsed(self.elapsed_ms()))
+
+    @staticmethod
+    def format_elapsed(elapsed_ms: int) -> str:
+        total_tenths = max(0, elapsed_ms // 100)
+        minutes = total_tenths // 600
+        seconds = (total_tenths % 600) // 10
+        tenths = total_tenths % 10
+        return f"{minutes:02d}:{seconds:02d}.{tenths}"
 
 
 class ReorderableTodoListWidget(QListWidget):

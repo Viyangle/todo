@@ -16,12 +16,17 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPushButton,
     QSpinBox,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from app.ui.widgets import ActionIconButton, ReorderableTodoListWidget, ResizeHandle
+from app.ui.widgets import (
+    ActionIconButton,
+    MemoryGameWidget,
+    QuoteBoxWidget,
+    ReorderableTodoListWidget,
+    ResizeHandle,
+)
 
 if TYPE_CHECKING:
     from app.ui.main_window import MainWindow
@@ -90,12 +95,7 @@ class MainPageView(QWidget):
         self.todo_list = ReorderableTodoListWidget()
         layout.addWidget(self.todo_list)
 
-        self.quote_box = QTextEdit(self)
-        self.quote_box.setReadOnly(True)
-        self.quote_box.setObjectName("quoteBox")
-        self.quote_box.setFixedHeight(108)
-        self.quote_box.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.quote_box.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.quote_box = QuoteBoxWidget(self)
         layout.addWidget(self.quote_box)
 
         action_layout = QHBoxLayout()
@@ -166,13 +166,8 @@ class TarotPageView(QWidget):
         title.setStyleSheet("font-size: 16px; font-weight: 700;")
         layout.addWidget(title)
 
-        hint = QLabel("Three-card spread: Past / Present / Future")
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: rgba(28, 37, 48, 170);")
-        layout.addWidget(hint)
-
         self.tarot_question_edit = QLineEdit(self)
-        self.tarot_question_edit.setPlaceholderText("e.g. What should I focus on this afternoon?")
+        self.tarot_question_edit.setPlaceholderText("Ask a question")
         layout.addWidget(self.tarot_question_edit)
 
         controls = QHBoxLayout()
@@ -189,11 +184,6 @@ class TarotPageView(QWidget):
         tarot_card_layout = QVBoxLayout(self.tarot_card_panel)
         tarot_card_layout.setContentsMargins(14, 14, 14, 14)
         tarot_card_layout.setSpacing(8)
-
-        self.tarot_question_label = QLabel("Question: -")
-        self.tarot_question_label.setWordWrap(True)
-        self.tarot_question_label.setStyleSheet("color: rgba(28, 37, 48, 170);")
-        tarot_card_layout.addWidget(self.tarot_question_label)
 
         self.tarot_spread_label = QLabel("Spread: Past / Present / Future")
         self.tarot_spread_label.setStyleSheet("font-size: 15px; font-weight: 700;")
@@ -239,6 +229,70 @@ class TarotPageView(QWidget):
         actions.addStretch()
         layout.addLayout(actions)
 
+        self.loading_overlay = QFrame(self)
+        self.loading_overlay.setObjectName("tarotLoadingOverlay")
+        self.loading_overlay.hide()
+
+        self.loading_panel = QFrame(self.loading_overlay)
+        self.loading_panel.setObjectName("tarotLoadingPanel")
+
+        overlay_layout = QVBoxLayout(self.loading_panel)
+        overlay_layout.setContentsMargins(18, 18, 18, 18)
+        overlay_layout.setSpacing(12)
+
+        overlay_title = QLabel("AI is reading the cards")
+        overlay_title.setStyleSheet("font-size: 17px; font-weight: 800;")
+        overlay_layout.addWidget(overlay_title)
+
+        self.loading_status_label = QLabel("Pick a tiny game while you wait.")
+        self.loading_status_label.setWordWrap(True)
+        self.loading_status_label.setStyleSheet("color: rgba(28, 37, 48, 170);")
+        overlay_layout.addWidget(self.loading_status_label)
+
+        overlay_controls = QHBoxLayout()
+        overlay_controls.setSpacing(8)
+
+        self.loading_game_combo = QComboBox(self.loading_panel)
+        self.loading_game_combo.addItem("Memory")
+        self.loading_game_combo.setEnabled(False)
+
+        self.loading_difficulty_combo = QComboBox(self.loading_panel)
+        self.loading_difficulty_combo.addItem("Easy", "easy")
+        self.loading_difficulty_combo.addItem("Normal", "normal")
+        self.loading_difficulty_combo.addItem("Hard", "hard")
+
+        self.loading_start_button = QPushButton("start")
+        self.loading_restart_button = QPushButton("restart")
+        self.loading_close_button = QPushButton("view reading")
+        self.loading_close_button.setEnabled(False)
+
+        overlay_controls.addWidget(self.loading_game_combo, 1)
+        overlay_controls.addWidget(self.loading_difficulty_combo, 1)
+        overlay_controls.addWidget(self.loading_start_button)
+        overlay_controls.addWidget(self.loading_restart_button)
+        overlay_controls.addWidget(self.loading_close_button)
+        overlay_layout.addLayout(overlay_controls)
+
+        info_row = QHBoxLayout()
+        info_row.setSpacing(10)
+        self.loading_timer_label = QLabel("Timer: 00:00.0")
+        self.loading_timer_label.setStyleSheet("font-size: 13px; font-weight: 700;")
+        self.loading_best_label = QLabel("Best: --")
+        self.loading_best_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.loading_best_label.setStyleSheet("color: rgba(28, 37, 48, 170);")
+        info_row.addWidget(self.loading_timer_label)
+        info_row.addStretch()
+        info_row.addWidget(self.loading_best_label)
+        overlay_layout.addLayout(info_row)
+
+        self.loading_game_widget = MemoryGameWidget(self.loading_panel)
+        overlay_layout.addWidget(self.loading_game_widget, 1)
+
+        self.loading_result_label = QLabel("Match all pairs before the reading is ready.")
+        self.loading_result_label.setWordWrap(True)
+        self.loading_result_label.setStyleSheet("color: rgba(28, 37, 48, 170);")
+        overlay_layout.addWidget(self.loading_result_label)
+
     def _build_card_box(self, title: str) -> tuple[QFrame, QLabel, QLabel]:
         box = QFrame(self.tarot_card_panel)
         box.setObjectName("tarotCardBox")
@@ -264,6 +318,16 @@ class TarotPageView(QWidget):
         box_layout.addWidget(body_label)
         box_layout.addStretch()
         return box, name_label, body_label
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self.loading_overlay.setGeometry(self.rect())
+
+        panel_width = min(max(360, self.width() - 44), 560)
+        panel_height = min(max(360, self.height() - 54), 520)
+        x = max(22, (self.width() - panel_width) // 2)
+        y = max(18, (self.height() - panel_height) // 2)
+        self.loading_panel.setGeometry(x, y, panel_width, panel_height)
 
 
 class TarotHistoryPageView(QWidget):

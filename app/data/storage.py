@@ -7,6 +7,8 @@ from app.core.models import TarotReading, TodoItem
 
 
 class TodoStorage:
+    _tarot_history_limit = 20
+
     def __init__(self, db_path: str = "data/todo.db") -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -153,6 +155,18 @@ class TodoStorage:
                 """,
                 (reading_id,),
             ).fetchone()
+            conn.execute(
+                """
+                DELETE FROM tarot_readings
+                WHERE id NOT IN (
+                    SELECT id
+                    FROM tarot_readings
+                    ORDER BY id DESC
+                    LIMIT ?
+                )
+                """,
+                (self._tarot_history_limit,),
+            )
             conn.commit()
 
         return TarotReading(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import random
 from pathlib import Path
@@ -65,31 +64,16 @@ class ContentService:
             )
         return valid_quotes
 
-    def pick_quote_html(self, quotes: list[dict[str, str]], current_html: str = "") -> str:
+    def pick_quote(
+        self,
+        quotes: list[dict[str, str]],
+        current_quote: dict[str, str] | None = None,
+    ) -> dict[str, str] | None:
         available_quotes = [
             quote for quote in quotes
-            if self.format_quote_html(quote) != current_html
+            if quote != current_quote
         ]
         if not available_quotes:
             available_quotes = quotes[:]
 
-        selected = random.choice(available_quotes) if available_quotes else None
-        return self.format_quote_html(selected)
-
-    def format_quote_html(self, quote_entry: dict[str, str] | None) -> str:
-        if not quote_entry:
-            return "<div>No quotes available.</div>"
-
-        author = quote_entry.get("author", "").strip()
-        quote = quote_entry.get("quote", "").strip()
-        quote_html = html.escape(quote)
-        author_html = html.escape(author)
-
-        return (
-            "<div style='font-size:13px; line-height:1.5;'>"
-            f"{quote_html}"
-            "</div>"
-            "<div style='font-size:13px; line-height:1.4; text-align:right; margin-top:6px;'>"
-            f"——{author_html}"
-            "</div>"
-        )
+        return random.choice(available_quotes) if available_quotes else None

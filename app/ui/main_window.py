@@ -1,6 +1,6 @@
 import json
 
-from PySide6.QtCore import QDate, QSettings, QSize, Qt, QTime, QTimer
+from PySide6.QtCore import QDate, QObject, QPoint, QSettings, QSize, Qt, QThread, QTime, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -46,6 +46,24 @@ TAROT_NAME_ZH = {
 }
 
 
+class TarotDrawWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, controller: TarotController, question: str) -> None:
+        super().__init__()
+        self._controller = controller
+        self._question = question
+
+    def run(self) -> None:
+        try:
+            reading = self._controller.draw_spread(self._question)
+        except Exception as error:
+            self.failed.emit(str(error))
+            return
+        self.finished.emit(reading)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, storage: TodoStorage) -> None:
         super().__init__()
@@ -54,8 +72,8 @@ class MainWindow(QMainWindow):
         self._is_quitting = False
         self._snap_margin = 24
         self._corner_radius = 22
-        self._minimum_size = QSize(470, 480)
-        self._fallback_default_size = QSize(470, 520)
+        self._minimum_size = QSize(665, 720)
+        self._fallback_default_size = QSize(665, 720)
         self._window_manager = WindowManager(self)
         self._default_size = self._window_manager.load_default_size()
         self._due_soon_minutes = self._window_manager.load_due_warning_minutes()
@@ -72,7 +90,11 @@ class MainWindow(QMainWindow):
             tarot_cards=self._tarot_cards,
             tarot_name_map=TAROT_NAME_ZH,
         )
-        self._current_quote = ""
+        self._current_quote: dict[str, str] | None = None
+        self._tarot_thread: QThread | None = None
+        self._tarot_worker: TarotDrawWorker | None = None
+        self._tarot_loading = False
+        self._tarot_result_ready = False
 
         self.setWindowTitle("Todo")
         self.setMinimumSize(self._minimum_size)
@@ -162,7 +184,6 @@ class MainWindow(QMainWindow):
     def _alias_tarot_page_widgets(self) -> None:
         self.tarot_question_edit = self.tarot_page.tarot_question_edit
         self.tarot_card_panel = self.tarot_page.tarot_card_panel
-        self.tarot_question_label = self.tarot_page.tarot_question_label
         self.tarot_spread_label = self.tarot_page.tarot_spread_label
         self.tarot_past_box = self.tarot_page.tarot_past_box
         self.tarot_past_name = self.tarot_page.tarot_past_name
@@ -175,6 +196,17 @@ class MainWindow(QMainWindow):
         self.tarot_future_body = self.tarot_page.tarot_future_body
         self.tarot_summary_box = self.tarot_page.tarot_summary_box
         self.tarot_summary_body = self.tarot_page.tarot_summary_body
+        self.tarot_loading_overlay = self.tarot_page.loading_overlay
+        self.tarot_loading_status_label = self.tarot_page.loading_status_label
+        self.tarot_loading_game_combo = self.tarot_page.loading_game_combo
+        self.tarot_loading_difficulty_combo = self.tarot_page.loading_difficulty_combo
+        self.tarot_loading_start_button = self.tarot_page.loading_start_button
+        self.tarot_loading_restart_button = self.tarot_page.loading_restart_button
+        self.tarot_loading_close_button = self.tarot_page.loading_close_button
+        self.tarot_loading_timer_label = self.tarot_page.loading_timer_label
+        self.tarot_loading_best_label = self.tarot_page.loading_best_label
+        self.tarot_loading_game_widget = self.tarot_page.loading_game_widget
+        self.tarot_loading_result_label = self.tarot_page.loading_result_label
 
     def _alias_tarot_history_widgets(self) -> None:
         self.tarot_history_list = self.tarot_history_page.tarot_history_list
@@ -209,6 +241,12 @@ class MainWindow(QMainWindow):
         self.tarot_page.draw_button.clicked.connect(self.draw_tarot_spread)
         self.tarot_page.history_button.clicked.connect(self._window_manager.show_tarot_history_page)
         self.tarot_page.back_button.clicked.connect(self._window_manager.show_main_page)
+        self.tarot_loading_difficulty_combo.currentIndexChanged.connect(self._update_memory_game_best_label)
+        self.tarot_loading_start_button.clicked.connect(self._start_memory_game)
+        self.tarot_loading_restart_button.clicked.connect(self._restart_memory_game)
+        self.tarot_loading_close_button.clicked.connect(self._close_tarot_loading_overlay)
+        self.tarot_loading_game_widget.time_changed.connect(self._update_memory_game_timer)
+        self.tarot_loading_game_widget.completed.connect(self._finish_memory_game)
 
         self.tarot_history_list.itemClicked.connect(self.show_tarot_history_item)
         self.tarot_history_page.back_button.clicked.connect(self._window_manager.show_tarot_page)
@@ -227,6 +265,8 @@ class MainWindow(QMainWindow):
         self._due_popup_show_timer.setSingleShot(True)
         self._due_popup_show_timer.setInterval(180)
         self._due_popup_show_timer.timeout.connect(self._show_due_popup)
+        self._update_memory_game_best_label()
+        self._update_memory_game_timer("00:00.0")
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(
@@ -281,6 +321,15 @@ class MainWindow(QMainWindow):
                 background-color: rgba(255, 231, 209, 208);
                 border: 1px solid rgba(236, 149, 92, 214);
                 border-radius: 12px;
+            }}
+            #tarotLoadingOverlay {{
+                background-color: rgba(14, 24, 38, 116);
+                border-radius: 16px;
+            }}
+            #tarotLoadingPanel {{
+                background-color: rgba(241, 247, 252, 245);
+                border: 1px solid rgba(255, 255, 255, 170);
+                border-radius: 20px;
             }}
             QCalendarWidget QWidget {{
                 alternate-background-color: rgba(200, 220, 242, 140);
@@ -469,11 +518,18 @@ class MainWindow(QMainWindow):
         self._refresh_quote()
 
     def _refresh_quote(self) -> None:
-        self._current_quote = self._content_service.pick_quote_html(
+        self._current_quote = self._content_service.pick_quote(
             self._philosopher_quotes,
-            current_html=self._current_quote,
+            current_quote=self._current_quote,
         )
-        self.quote_box.setHtml(self._current_quote)
+        if not self._current_quote:
+            self.quote_box.set_quote("No quotes available.")
+            return
+
+        self.quote_box.set_quote(
+            self._current_quote.get("quote", ""),
+            self._current_quote.get("author", ""),
+        )
 
     def _refresh_list(self, keep_scroll: bool = False, scroll_to_bottom: bool = False) -> None:
         scroll_bar = self.todo_list.verticalScrollBar()
@@ -536,15 +592,133 @@ class MainWindow(QMainWindow):
         if not self._tarot_controller.has_cards():
             QMessageBox.warning(self, "Tarot", "Tarot deck is unavailable.")
             return
+        if self._tarot_loading:
+            return
 
         question = self.tarot_question_edit.text().strip()
-        reading = self._tarot_controller.draw_spread(question)
+        self._start_tarot_loading(question)
+
+    def _start_tarot_loading(self, question: str) -> None:
+        self._tarot_loading = True
+        self._tarot_result_ready = False
+        self.tarot_page.draw_button.setEnabled(False)
+        self.tarot_question_edit.setEnabled(False)
+        self.tarot_loading_status_label.setText("AI is drawing and interpreting your spread. Pick a quick round.")
+        self.tarot_loading_result_label.setText("Match all pairs before the reading is ready.")
+        self.tarot_summary_body.setText("Interpreting...")
+        self._show_tarot_loading_overlay()
+
+        self._tarot_thread = QThread(self)
+        self._tarot_worker = TarotDrawWorker(self._tarot_controller, question)
+        self._tarot_worker.moveToThread(self._tarot_thread)
+        self._tarot_thread.started.connect(self._tarot_worker.run)
+        self._tarot_worker.finished.connect(self._on_tarot_draw_finished)
+        self._tarot_worker.failed.connect(self._on_tarot_draw_failed)
+        self._tarot_worker.finished.connect(self._cleanup_tarot_worker)
+        self._tarot_worker.failed.connect(self._cleanup_tarot_worker)
+        self._tarot_thread.start()
+
+    def _cleanup_tarot_worker(self, *_args) -> None:
+        if self._tarot_thread is not None:
+            self._tarot_thread.quit()
+            self._tarot_thread.wait()
+            self._tarot_thread.deleteLater()
+            self._tarot_thread = None
+        if self._tarot_worker is not None:
+            self._tarot_worker.deleteLater()
+            self._tarot_worker = None
+
+    def _on_tarot_draw_finished(self, reading) -> None:
+        self._tarot_loading = False
+        self._tarot_result_ready = True
+        self.tarot_page.draw_button.setEnabled(True)
+        self.tarot_question_edit.setEnabled(True)
         self._show_tarot_reading(reading.question, reading.cards, reading.summary)
         self._refresh_tarot_history()
+        self.tarot_loading_status_label.setText("The reading is ready. You can keep playing and open it when you want.")
+        self.tarot_loading_result_label.setText("AI finished the reading. Click 'view reading' whenever you're done.")
+        self.tarot_loading_close_button.setEnabled(True)
+
+    def _on_tarot_draw_failed(self, error_message: str) -> None:
+        self._tarot_loading = False
+        self._tarot_result_ready = True
+        self.tarot_page.draw_button.setEnabled(True)
+        self.tarot_question_edit.setEnabled(True)
+        self.tarot_summary_body.setText("Unable to finish the reading.")
+        self.tarot_loading_status_label.setText("The reading failed. You can close this panel whenever you want.")
+        self.tarot_loading_result_label.setText(error_message or "Tarot reading failed.")
+        self.tarot_loading_close_button.setEnabled(True)
+
+    def _show_tarot_loading_overlay(self) -> None:
+        self.tarot_loading_overlay.show()
+        self.tarot_loading_overlay.raise_()
+        self.tarot_loading_close_button.setEnabled(False)
+        self._update_memory_game_timer("00:00.0")
+        self._update_memory_game_best_label()
+
+    def _hide_tarot_loading_overlay(self) -> None:
+        self.tarot_loading_game_widget.stop()
+        self.tarot_loading_overlay.hide()
+        self.tarot_loading_close_button.setEnabled(False)
+
+    def _close_tarot_loading_overlay(self) -> None:
+        if not self._tarot_result_ready:
+            return
+        self._hide_tarot_loading_overlay()
+
+    def _current_memory_difficulty(self) -> str:
+        return str(self.tarot_loading_difficulty_combo.currentData() or "normal")
+
+    def _memory_best_key(self, difficulty: str) -> str:
+        return f"games/memory_best_ms/{difficulty}"
+
+    def _load_memory_best(self, difficulty: str) -> int | None:
+        raw_value = self.settings.value(self._memory_best_key(difficulty))
+        try:
+            best_ms = int(raw_value)
+        except (TypeError, ValueError):
+            return None
+        return best_ms if best_ms > 0 else None
+
+    def _save_memory_best(self, difficulty: str, elapsed_ms: int) -> None:
+        self.settings.setValue(self._memory_best_key(difficulty), elapsed_ms)
+
+    def _update_memory_game_best_label(self) -> None:
+        difficulty = self._current_memory_difficulty()
+        best_ms = self._load_memory_best(difficulty)
+        difficulty_text = self.tarot_loading_difficulty_combo.currentText()
+        if best_ms is None:
+            self.tarot_loading_best_label.setText(f"Best ({difficulty_text}): --")
+            return
+        self.tarot_loading_best_label.setText(
+            f"Best ({difficulty_text}): {self.tarot_loading_game_widget.format_elapsed(best_ms)}"
+        )
+
+    def _update_memory_game_timer(self, value: str) -> None:
+        self.tarot_loading_timer_label.setText(f"Timer: {value}")
+
+    def _start_memory_game(self) -> None:
+        difficulty = self._current_memory_difficulty()
+        self.tarot_loading_game_widget.start_new_game(difficulty)
+        self.tarot_loading_result_label.setText("Find all pairs before the reading completes.")
+
+    def _restart_memory_game(self) -> None:
+        self._start_memory_game()
+
+    def _finish_memory_game(self, elapsed_ms: int) -> None:
+        difficulty = self.tarot_loading_game_widget.current_difficulty()
+        best_ms = self._load_memory_best(difficulty)
+        is_best = best_ms is None or elapsed_ms < best_ms
+        if is_best:
+            self._save_memory_best(difficulty, elapsed_ms)
+        if difficulty == self._current_memory_difficulty():
+            self._update_memory_game_best_label()
+        suffix = " New best!" if is_best else ""
+        self.tarot_loading_result_label.setText(
+            f"Finished in {self.tarot_loading_game_widget.format_elapsed(elapsed_ms)}.{suffix}"
+        )
 
     def _show_tarot_reading(self, question: str, cards: list[dict[str, str]], summary: str) -> None:
-        question_text = question if question else "-"
-        self.tarot_question_label.setText(f"Question: {question_text}")
         self.tarot_spread_label.setText("Spread: Past / Present / Future")
 
         by_position = {card.get("position", ""): card for card in cards}
