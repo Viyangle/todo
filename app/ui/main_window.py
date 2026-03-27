@@ -65,10 +65,24 @@ class TarotDrawWorker(QObject):
 
 
 class MainWindow(QMainWindow):
+    LOADING_GAME_DIFFICULTIES = {
+        "memory": [
+            ("Easy", "easy"),
+            ("Normal", "normal"),
+            ("Hard", "hard"),
+            ("Hell", "hell"),
+        ],
+        "runner": [
+            ("Easy", "easy"),
+            ("Hard", "hard"),
+        ],
+    }
+
     def __init__(self, storage: TodoStorage) -> None:
         super().__init__()
         self.storage = storage
         self.settings = QSettings("TodoDesktop", "Todo")
+        self._reset_runner_scores_once()
         self._is_quitting = False
         self._snap_margin = 24
         self._corner_radius = 22
@@ -107,6 +121,13 @@ class MainWindow(QMainWindow):
         self._window_manager.setup_tray()
         self.refresh_main_page()
         self._refresh_tarot_history()
+
+    def _reset_runner_scores_once(self) -> None:
+        migration_key = "games/runner_score_reset_v2"
+        if self.settings.value(migration_key, False, type=bool):
+            return
+        self.settings.remove("games/runner_best_ms")
+        self.settings.setValue(migration_key, True)
 
     def _setup_ui(self) -> None:
         root = QWidget(self)
@@ -201,11 +222,12 @@ class MainWindow(QMainWindow):
         self.tarot_loading_game_combo = self.tarot_page.loading_game_combo
         self.tarot_loading_difficulty_combo = self.tarot_page.loading_difficulty_combo
         self.tarot_loading_start_button = self.tarot_page.loading_start_button
-        self.tarot_loading_restart_button = self.tarot_page.loading_restart_button
         self.tarot_loading_close_button = self.tarot_page.loading_close_button
         self.tarot_loading_timer_label = self.tarot_page.loading_timer_label
         self.tarot_loading_best_label = self.tarot_page.loading_best_label
-        self.tarot_loading_game_widget = self.tarot_page.loading_game_widget
+        self.tarot_loading_game_stack = self.tarot_page.loading_game_stack
+        self.tarot_loading_memory_game_widget = self.tarot_page.loading_memory_game_widget
+        self.tarot_loading_runner_game_widget = self.tarot_page.loading_runner_game_widget
         self.tarot_loading_result_label = self.tarot_page.loading_result_label
 
     def _alias_tarot_history_widgets(self) -> None:
@@ -241,12 +263,18 @@ class MainWindow(QMainWindow):
         self.tarot_page.draw_button.clicked.connect(self.draw_tarot_spread)
         self.tarot_page.history_button.clicked.connect(self._window_manager.show_tarot_history_page)
         self.tarot_page.back_button.clicked.connect(self._window_manager.show_main_page)
-        self.tarot_loading_difficulty_combo.currentIndexChanged.connect(self._update_memory_game_best_label)
-        self.tarot_loading_start_button.clicked.connect(self._start_memory_game)
-        self.tarot_loading_restart_button.clicked.connect(self._restart_memory_game)
+        self.tarot_loading_game_combo.currentIndexChanged.connect(self._on_loading_game_changed)
+        self.tarot_loading_difficulty_combo.currentIndexChanged.connect(self._update_loading_game_best_label)
+        self.tarot_loading_start_button.clicked.connect(self._start_loading_game)
         self.tarot_loading_close_button.clicked.connect(self._close_tarot_loading_overlay)
-        self.tarot_loading_game_widget.time_changed.connect(self._update_memory_game_timer)
-        self.tarot_loading_game_widget.completed.connect(self._finish_memory_game)
+        self.tarot_loading_memory_game_widget.time_changed.connect(self._update_loading_game_timer)
+        self.tarot_loading_memory_game_widget.completed.connect(
+            lambda elapsed_ms: self._finish_loading_game("memory", elapsed_ms)
+        )
+        self.tarot_loading_runner_game_widget.time_changed.connect(self._update_loading_game_timer)
+        self.tarot_loading_runner_game_widget.completed.connect(
+            lambda elapsed_ms: self._finish_loading_game("runner", elapsed_ms)
+        )
 
         self.tarot_history_list.itemClicked.connect(self.show_tarot_history_item)
         self.tarot_history_page.back_button.clicked.connect(self._window_manager.show_tarot_page)
@@ -265,8 +293,8 @@ class MainWindow(QMainWindow):
         self._due_popup_show_timer.setSingleShot(True)
         self._due_popup_show_timer.setInterval(180)
         self._due_popup_show_timer.timeout.connect(self._show_due_popup)
-        self._update_memory_game_best_label()
-        self._update_memory_game_timer("00:00.0")
+        self._on_loading_game_changed()
+        self._update_loading_game_timer("00:00.0")
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(
@@ -604,7 +632,7 @@ class MainWindow(QMainWindow):
         self.tarot_page.draw_button.setEnabled(False)
         self.tarot_question_edit.setEnabled(False)
         self.tarot_loading_status_label.setText("AI is drawing and interpreting your spread. Pick a quick round.")
-        self.tarot_loading_result_label.setText("Match all pairs before the reading is ready.")
+        self.tarot_loading_result_label.setText(self._default_loading_hint())
         self.tarot_summary_body.setText("Interpreting...")
         self._show_tarot_loading_overlay()
 
@@ -653,11 +681,12 @@ class MainWindow(QMainWindow):
         self.tarot_loading_overlay.show()
         self.tarot_loading_overlay.raise_()
         self.tarot_loading_close_button.setEnabled(False)
-        self._update_memory_game_timer("00:00.0")
-        self._update_memory_game_best_label()
+        self._stop_all_loading_games()
+        self._update_loading_game_timer("0")
+        self._update_loading_game_best_label()
 
     def _hide_tarot_loading_overlay(self) -> None:
-        self.tarot_loading_game_widget.stop()
+        self._stop_all_loading_games()
         self.tarot_loading_overlay.hide()
         self.tarot_loading_close_button.setEnabled(False)
 
@@ -666,57 +695,124 @@ class MainWindow(QMainWindow):
             return
         self._hide_tarot_loading_overlay()
 
-    def _current_memory_difficulty(self) -> str:
-        return str(self.tarot_loading_difficulty_combo.currentData() or "normal")
+    def _current_loading_game_key(self) -> str:
+        return str(self.tarot_loading_game_combo.currentData() or "memory")
 
-    def _memory_best_key(self, difficulty: str) -> str:
-        return f"games/memory_best_ms/{difficulty}"
+    def _current_loading_game_widget(self):
+        if self._current_loading_game_key() == "runner":
+            return self.tarot_loading_runner_game_widget
+        return self.tarot_loading_memory_game_widget
 
-    def _load_memory_best(self, difficulty: str) -> int | None:
-        raw_value = self.settings.value(self._memory_best_key(difficulty))
+    def _current_loading_difficulty(self) -> str:
+        return str(self.tarot_loading_difficulty_combo.currentData() or "easy")
+
+    def _configure_loading_difficulties(self, game_key: str) -> None:
+        current_difficulty = self._current_loading_difficulty()
+        options = self.LOADING_GAME_DIFFICULTIES.get(game_key, self.LOADING_GAME_DIFFICULTIES["memory"])
+
+        self.tarot_loading_difficulty_combo.blockSignals(True)
+        self.tarot_loading_difficulty_combo.clear()
+        selected_index = 0
+        for index, (label, value) in enumerate(options):
+            self.tarot_loading_difficulty_combo.addItem(label, value)
+            if value == current_difficulty:
+                selected_index = index
+        self.tarot_loading_difficulty_combo.setCurrentIndex(selected_index)
+        self.tarot_loading_difficulty_combo.blockSignals(False)
+
+    def _loading_game_best_key(self, game_key: str, difficulty: str) -> str:
+        return f"games/{game_key}_best_ms/{difficulty}"
+
+    def _load_loading_game_best(self, game_key: str, difficulty: str) -> int | None:
+        raw_value = self.settings.value(self._loading_game_best_key(game_key, difficulty))
         try:
             best_ms = int(raw_value)
         except (TypeError, ValueError):
             return None
         return best_ms if best_ms > 0 else None
 
-    def _save_memory_best(self, difficulty: str, elapsed_ms: int) -> None:
-        self.settings.setValue(self._memory_best_key(difficulty), elapsed_ms)
+    def _save_loading_game_best(self, game_key: str, difficulty: str, elapsed_ms: int) -> None:
+        self.settings.setValue(self._loading_game_best_key(game_key, difficulty), elapsed_ms)
 
-    def _update_memory_game_best_label(self) -> None:
-        difficulty = self._current_memory_difficulty()
-        best_ms = self._load_memory_best(difficulty)
+    def _is_lower_better(self, game_key: str) -> bool:
+        return game_key == "memory"
+
+    def _update_loading_game_best_label(self) -> None:
+        game_key = self._current_loading_game_key()
+        difficulty = self._current_loading_difficulty()
+        best_ms = self._load_loading_game_best(game_key, difficulty)
         difficulty_text = self.tarot_loading_difficulty_combo.currentText()
+        game_label = self.tarot_loading_game_combo.currentText()
         if best_ms is None:
-            self.tarot_loading_best_label.setText(f"Best ({difficulty_text}): --")
+            self.tarot_loading_best_label.setText(f"Best {game_label} ({difficulty_text}): --")
             return
+        widget = self._current_loading_game_widget()
         self.tarot_loading_best_label.setText(
-            f"Best ({difficulty_text}): {self.tarot_loading_game_widget.format_elapsed(best_ms)}"
+            f"Best {game_label} ({difficulty_text}): {widget.format_elapsed(best_ms)}"
         )
 
-    def _update_memory_game_timer(self, value: str) -> None:
+    def _update_loading_game_timer(self, value: str) -> None:
+        if self._current_loading_game_key() == "runner":
+            self.tarot_loading_timer_label.setText(f"Score: {value}")
+            return
         self.tarot_loading_timer_label.setText(f"Timer: {value}")
 
-    def _start_memory_game(self) -> None:
-        difficulty = self._current_memory_difficulty()
-        self.tarot_loading_game_widget.start_new_game(difficulty)
-        self.tarot_loading_result_label.setText("Find all pairs before the reading completes.")
+    def _default_loading_hint(self) -> str:
+        if self._current_loading_game_key() == "runner":
+            return "Score points over time, dodge meteors, catch hearts, and grab the rare diamond for 500."
+        if self._current_loading_difficulty() == "hell":
+            return "Hell mode deals 40 cards, so expect a long board and a fast memory workout."
+        return "Match all pairs before the reading is ready."
 
-    def _restart_memory_game(self) -> None:
-        self._start_memory_game()
+    def _start_loading_game(self) -> None:
+        difficulty = self._current_loading_difficulty()
+        self._stop_all_loading_games()
+        self._update_loading_game_timer("0")
+        widget = self._current_loading_game_widget()
+        widget.start_new_game(difficulty)
+        if self._current_loading_game_key() == "runner":
+            self.tarot_loading_result_label.setText("Build score over time. Hearts heal, diamonds are worth 500.")
+        elif difficulty == "hell":
+            self.tarot_loading_result_label.setText("Hell mode started: 40 cards, 20 pairs.")
+        else:
+            self.tarot_loading_result_label.setText("Find all pairs before the reading completes.")
 
-    def _finish_memory_game(self, elapsed_ms: int) -> None:
-        difficulty = self.tarot_loading_game_widget.current_difficulty()
-        best_ms = self._load_memory_best(difficulty)
-        is_best = best_ms is None or elapsed_ms < best_ms
+    def _finish_loading_game(self, game_key: str, elapsed_ms: int) -> None:
+        widget = self.tarot_loading_runner_game_widget if game_key == "runner" else self.tarot_loading_memory_game_widget
+        difficulty = widget.current_difficulty()
+        best_ms = self._load_loading_game_best(game_key, difficulty)
+        if self._is_lower_better(game_key):
+            is_best = best_ms is None or elapsed_ms < best_ms
+        else:
+            is_best = best_ms is None or elapsed_ms > best_ms
         if is_best:
-            self._save_memory_best(difficulty, elapsed_ms)
-        if difficulty == self._current_memory_difficulty():
-            self._update_memory_game_best_label()
+            self._save_loading_game_best(game_key, difficulty, elapsed_ms)
+        if difficulty == self._current_loading_difficulty() and game_key == self._current_loading_game_key():
+            self._update_loading_game_best_label()
         suffix = " New best!" if is_best else ""
-        self.tarot_loading_result_label.setText(
-            f"Finished in {self.tarot_loading_game_widget.format_elapsed(elapsed_ms)}.{suffix}"
-        )
+        if game_key == "runner":
+            self.tarot_loading_result_label.setText(
+                f"Final score: {widget.format_elapsed(elapsed_ms)}.{suffix}"
+            )
+            return
+        self.tarot_loading_result_label.setText(f"Finished in {widget.format_elapsed(elapsed_ms)}.{suffix}")
+
+    def _stop_all_loading_games(self) -> None:
+        self.tarot_loading_memory_game_widget.stop()
+        self.tarot_loading_runner_game_widget.stop()
+
+    def _on_loading_game_changed(self) -> None:
+        game_key = self._current_loading_game_key()
+        self._stop_all_loading_games()
+        self._configure_loading_difficulties(game_key)
+        self._update_loading_game_timer("0")
+        if game_key == "runner":
+            self.tarot_loading_game_stack.setCurrentWidget(self.tarot_loading_runner_game_widget)
+        else:
+            self.tarot_loading_game_stack.setCurrentWidget(self.tarot_loading_memory_game_widget)
+        self._update_loading_game_best_label()
+        if not self._tarot_result_ready:
+            self.tarot_loading_result_label.setText(self._default_loading_hint())
 
     def _show_tarot_reading(self, question: str, cards: list[dict[str, str]], summary: str) -> None:
         self.tarot_spread_label.setText("Spread: Past / Present / Future")

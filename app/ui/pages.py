@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPushButton,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 from app.ui.widgets import (
     ActionIconButton,
     MemoryGameWidget,
+    PlaneRunnerGameWidget,
     QuoteBoxWidget,
     ReorderableTodoListWidget,
     ResizeHandle,
@@ -247,29 +249,25 @@ class TarotPageView(QWidget):
         self.loading_status_label = QLabel("Pick a tiny game while you wait.")
         self.loading_status_label.setWordWrap(True)
         self.loading_status_label.setStyleSheet("color: rgba(28, 37, 48, 170);")
+        self.loading_status_label.setFixedHeight(38)
         overlay_layout.addWidget(self.loading_status_label)
 
         overlay_controls = QHBoxLayout()
         overlay_controls.setSpacing(8)
 
         self.loading_game_combo = QComboBox(self.loading_panel)
-        self.loading_game_combo.addItem("Memory")
-        self.loading_game_combo.setEnabled(False)
+        self.loading_game_combo.addItem("Memory", "memory")
+        self.loading_game_combo.addItem("Runner", "runner")
 
         self.loading_difficulty_combo = QComboBox(self.loading_panel)
-        self.loading_difficulty_combo.addItem("Easy", "easy")
-        self.loading_difficulty_combo.addItem("Normal", "normal")
-        self.loading_difficulty_combo.addItem("Hard", "hard")
 
         self.loading_start_button = QPushButton("start")
-        self.loading_restart_button = QPushButton("restart")
         self.loading_close_button = QPushButton("view reading")
         self.loading_close_button.setEnabled(False)
 
         overlay_controls.addWidget(self.loading_game_combo, 1)
         overlay_controls.addWidget(self.loading_difficulty_combo, 1)
         overlay_controls.addWidget(self.loading_start_button)
-        overlay_controls.addWidget(self.loading_restart_button)
         overlay_controls.addWidget(self.loading_close_button)
         overlay_layout.addLayout(overlay_controls)
 
@@ -285,12 +283,18 @@ class TarotPageView(QWidget):
         info_row.addWidget(self.loading_best_label)
         overlay_layout.addLayout(info_row)
 
-        self.loading_game_widget = MemoryGameWidget(self.loading_panel)
-        overlay_layout.addWidget(self.loading_game_widget, 1)
+        self.loading_game_stack = QStackedWidget(self.loading_panel)
+        self.loading_memory_game_widget = MemoryGameWidget(self.loading_game_stack)
+        self.loading_runner_game_widget = PlaneRunnerGameWidget(self.loading_game_stack)
+        self.loading_game_stack.addWidget(self.loading_memory_game_widget)
+        self.loading_game_stack.addWidget(self.loading_runner_game_widget)
+        self.loading_game_stack.setFixedHeight(360)
+        overlay_layout.addWidget(self.loading_game_stack, 1)
 
         self.loading_result_label = QLabel("Match all pairs before the reading is ready.")
         self.loading_result_label.setWordWrap(True)
         self.loading_result_label.setStyleSheet("color: rgba(28, 37, 48, 170);")
+        self.loading_result_label.setFixedHeight(38)
         overlay_layout.addWidget(self.loading_result_label)
 
     def _build_card_box(self, title: str) -> tuple[QFrame, QLabel, QLabel]:
@@ -324,7 +328,7 @@ class TarotPageView(QWidget):
         self.loading_overlay.setGeometry(self.rect())
 
         panel_width = min(max(360, self.width() - 44), 560)
-        panel_height = min(max(360, self.height() - 54), 520)
+        panel_height = min(max(430, self.height() - 54), 620)
         x = max(22, (self.width() - panel_width) // 2)
         y = max(18, (self.height() - panel_height) // 2)
         self.loading_panel.setGeometry(x, y, panel_width, panel_height)
