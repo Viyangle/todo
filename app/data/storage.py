@@ -3,16 +3,24 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable, List
 
+from PySide6.QtCore import QStandardPaths
+
 from app.core.models import TarotReading, TodoItem
 
 
 class TodoStorage:
     _tarot_history_limit = 20
 
-    def __init__(self, db_path: str = "data/todo.db") -> None:
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = Path(db_path) if db_path else self._default_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    def _default_db_path(self) -> Path:
+        app_data_dir = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+        if app_data_dir:
+            return Path(app_data_dir) / "data" / "todo.db"
+        return Path("data") / "todo.db"
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)

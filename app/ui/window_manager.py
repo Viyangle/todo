@@ -76,6 +76,10 @@ class WindowManager:
         self.window.default_width_spin.setValue(self.window._default_size.width())
         self.window.default_height_spin.setValue(self.window._default_size.height())
         self.window.warn_minutes_spin.setValue(self.window._due_soon_minutes)
+        ai_config = self.window._load_ai_config()
+        self.window.ai_api_key_edit.setText(ai_config.api_key)
+        self.window.ai_base_url_edit.setText(ai_config.base_url)
+        self.window.ai_model_edit.setText(ai_config.model_name)
         self.set_current_page(self.window.settings_page)
 
     def show_tarot_page(self) -> None:
@@ -95,8 +99,13 @@ class WindowManager:
             self.window.default_height_spin.value(),
         )
         self.window._due_soon_minutes = self.window.warn_minutes_spin.value()
+        ai_config = self.window._build_ai_config_from_inputs()
         self.window.settings.setValue("prefs/default_size", self.window._default_size)
         self.window.settings.setValue("prefs/warn_minutes", self.window._due_soon_minutes)
+        self.window.settings.setValue("ai/api_key", ai_config.api_key)
+        self.window.settings.setValue("ai/base_url", ai_config.base_url)
+        self.window.settings.setValue("ai/model_name", ai_config.model_name)
+        self.window._apply_ai_config(ai_config)
         self.show_main_page()
         self.window._refresh_list(keep_scroll=True)
 

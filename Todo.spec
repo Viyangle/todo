@@ -4,13 +4,17 @@ from PyInstaller.utils.hooks import collect_all
 
 
 pyside_datas, pyside_binaries, pyside_hiddenimports = collect_all("PySide6")
+project_datas = [
+    ('app/data/philosopher_quotes.json', 'app/data'),
+    ('app/data/tarot_cards.json', 'app/data'),
+]
 
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=pyside_binaries,
-    datas=pyside_datas,
+    datas=pyside_datas + project_datas,
     hiddenimports=pyside_hiddenimports,
     hookspath=[],
     hooksconfig={},

@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import json
 import random
+import sys
 from pathlib import Path
 
 
 class ContentService:
     def __init__(self, base_dir: Path | None = None) -> None:
-        self.base_dir = base_dir or Path(__file__).resolve().parent.parent
+        self.base_dir = base_dir or self._resolve_base_dir()
+
+    def _resolve_base_dir(self) -> Path:
+        frozen_base = getattr(sys, "_MEIPASS", None)
+        if frozen_base:
+            return Path(frozen_base) / "app"
+        return Path(__file__).resolve().parent.parent
 
     def load_tarot_cards(self) -> list[dict[str, object]]:
         cards_path = self.base_dir / "data" / "tarot_cards.json"

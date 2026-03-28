@@ -1,4 +1,5 @@
 import json
+import os
 
 from PySide6.QtCore import QDate, QObject, QPoint, QSettings, QSize, Qt, QThread, QTime, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.content_service import ContentService
-from app.core.tarot_interpreter import TarotInterpreter
+from app.core.tarot_interpreter import TarotAIConfig, TarotInterpreter
 from app.data.storage import TodoStorage
 from app.ui.controllers import TarotController, TodoController
 from app.ui.pages import MainPageView, SettingsPageView, TarotHistoryPageView, TarotPageView
@@ -96,7 +97,7 @@ class MainWindow(QMainWindow):
         self._content_service = ContentService()
         self._tarot_cards = self._content_service.load_tarot_cards()
         self._philosopher_quotes = self._content_service.load_philosopher_quotes()
-        self._tarot_interpreter = TarotInterpreter()
+        self._tarot_interpreter = TarotInterpreter(self._load_ai_config())
         self._todo_controller = TodoController(storage)
         self._tarot_controller = TarotController(
             storage=storage,
@@ -121,6 +122,7 @@ class MainWindow(QMainWindow):
         self._window_manager.setup_tray()
         self.refresh_main_page()
         self._refresh_tarot_history()
+        QTimer.singleShot(0, self._prompt_for_ai_setup_if_needed)
 
     def _reset_runner_scores_once(self) -> None:
         migration_key = "games/runner_score_reset_v2"
@@ -201,6 +203,10 @@ class MainWindow(QMainWindow):
         self.default_width_spin = self.settings_page.default_width_spin
         self.default_height_spin = self.settings_page.default_height_spin
         self.warn_minutes_spin = self.settings_page.warn_minutes_spin
+        self.ai_api_key_edit = self.settings_page.ai_api_key_edit
+        self.ai_base_url_edit = self.settings_page.ai_base_url_edit
+        self.ai_model_edit = self.settings_page.ai_model_edit
+        self.test_ai_button = self.settings_page.test_ai_button
 
     def _alias_tarot_page_widgets(self) -> None:
         self.tarot_question_edit = self.tarot_page.tarot_question_edit
@@ -259,6 +265,7 @@ class MainWindow(QMainWindow):
         self.settings_page.back_button.clicked.connect(self._window_manager.show_main_page)
         self.settings_page.use_current_size_button.clicked.connect(self._window_manager.save_current_size_as_default)
         self.settings_page.save_button.clicked.connect(self._window_manager.save_settings)
+        self.test_ai_button.clicked.connect(self.test_ai_connection)
 
         self.tarot_page.draw_button.clicked.connect(self.draw_tarot_spread)
         self.tarot_page.history_button.clicked.connect(self._window_manager.show_tarot_history_page)
@@ -631,9 +638,9 @@ class MainWindow(QMainWindow):
         self._tarot_result_ready = False
         self.tarot_page.draw_button.setEnabled(False)
         self.tarot_question_edit.setEnabled(False)
-        self.tarot_loading_status_label.setText("AI is drawing and interpreting your spread. Pick a quick round.")
-        self.tarot_loading_result_label.setText(self._default_loading_hint())
+        self.tarot_loading_status_label.setText("Reading your spread. Pick a quick round.")
         self.tarot_summary_body.setText("Interpreting...")
+        self.tarot_loading_result_label.setText(self._default_loading_hint())
         self._show_tarot_loading_overlay()
 
         self._tarot_thread = QThread(self)
@@ -664,7 +671,7 @@ class MainWindow(QMainWindow):
         self._show_tarot_reading(reading.question, reading.cards, reading.summary)
         self._refresh_tarot_history()
         self.tarot_loading_status_label.setText("The reading is ready. You can keep playing and open it when you want.")
-        self.tarot_loading_result_label.setText("AI finished the reading. Click 'view reading' whenever you're done.")
+        self.tarot_loading_result_label.setText("Reading finished. Click 'view reading' whenever you're done.")
         self.tarot_loading_close_button.setEnabled(True)
 
     def _on_tarot_draw_failed(self, error_message: str) -> None:
@@ -676,6 +683,50 @@ class MainWindow(QMainWindow):
         self.tarot_loading_status_label.setText("The reading failed. You can close this panel whenever you want.")
         self.tarot_loading_result_label.setText(error_message or "Tarot reading failed.")
         self.tarot_loading_close_button.setEnabled(True)
+
+    def _load_ai_config(self) -> TarotAIConfig:
+        return TarotAIConfig(
+            api_key=self.settings.value("ai/api_key", os.getenv("OPENAI_API_KEY", ""), type=str).strip(),
+            base_url=self.settings.value(
+                "ai/base_url",
+                os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+                type=str,
+            ).strip(),
+            model_name=self.settings.value(
+                "ai/model_name",
+                os.getenv("OPENAI_MODEL_NAME", "qwen-max"),
+                type=str,
+            ).strip(),
+        )
+
+    def _build_ai_config_from_inputs(self) -> TarotAIConfig:
+        return TarotAIConfig(
+            api_key=self.ai_api_key_edit.text().strip(),
+            base_url=self.ai_base_url_edit.text().strip() or "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model_name=self.ai_model_edit.text().strip() or "qwen-max",
+        )
+
+    def _apply_ai_config(self, config: TarotAIConfig) -> None:
+        self._tarot_interpreter.set_config(config)
+
+    def test_ai_connection(self) -> None:
+        config = self._build_ai_config_from_inputs()
+        try:
+            reply = self._tarot_interpreter.test_connection(config)
+        except Exception as error:
+            QMessageBox.warning(self, "AI Test", f"Connection failed.\n\n{error}")
+            return
+        QMessageBox.information(self, "AI Test", f"Connection succeeded.\n\nModel reply: {reply}")
+
+    def _prompt_for_ai_setup_if_needed(self) -> None:
+        if self._tarot_interpreter.has_ai_config():
+            return
+        QMessageBox.information(
+            self,
+            "AI Setup",
+            "AI is not configured yet. Go to Settings to fill in API Key, Base URL, and Model.",
+        )
+        self._window_manager.show_settings_page()
 
     def _show_tarot_loading_overlay(self) -> None:
         self.tarot_loading_overlay.show()
