@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QCalendarWidget,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -116,6 +118,66 @@ class MainPageView(QWidget):
         action_layout.addWidget(self.refresh_button)
         action_layout.addWidget(self.resize_handle, 0, Qt.AlignRight | Qt.AlignBottom)
         layout.addLayout(action_layout)
+
+
+class TodoDueDateDialog(QDialog):
+    def __init__(self, due_at: str | None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit Due Time")
+        self.setModal(True)
+        self.resize(360, 360)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        self.calendar = QCalendarWidget(self)
+        self.hour_combo = QComboBox(self)
+        self.minute_combo = QComboBox(self)
+
+        for hour in range(24):
+            self.hour_combo.addItem(f"{hour:02d}")
+        for minute in range(0, 60, 5):
+            self.minute_combo.addItem(f"{minute:02d}")
+
+        initial_dt = self._initial_datetime(due_at)
+        self.calendar.setSelectedDate(initial_dt.date())
+        self.hour_combo.setCurrentText(f"{initial_dt.time().hour():02d}")
+        self.minute_combo.setCurrentText(f"{initial_dt.time().minute():02d}")
+
+        time_row = QHBoxLayout()
+        time_row.setSpacing(8)
+        time_row.addWidget(QLabel("Time"))
+        time_row.addWidget(self.hour_combo)
+        time_row.addWidget(self.minute_combo)
+        time_row.addStretch()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout.addWidget(self.calendar)
+        layout.addLayout(time_row)
+        layout.addWidget(buttons)
+
+    def selected_due(self) -> tuple[QDate, QTime]:
+        return (
+            self.calendar.selectedDate(),
+            QTime(int(self.hour_combo.currentText()), int(self.minute_combo.currentText()), 0),
+        )
+
+    def _initial_datetime(self, due_at: str | None):
+        from PySide6.QtCore import QDateTime
+
+        due_datetime = QDateTime.fromString(due_at or "", Qt.ISODate)
+        if due_datetime.isValid():
+            return due_datetime
+
+        current_time = QTime.currentTime()
+        rounded_minute = (current_time.minute() // 5) * 5
+        return QDate.currentDate().addDays(1).startOfDay().addSecs(
+            current_time.hour() * 3600 + rounded_minute * 60
+        )
 
 
 class SettingsPageView(QWidget):

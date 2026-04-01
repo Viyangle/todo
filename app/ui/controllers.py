@@ -40,8 +40,26 @@ class TodoController:
     def toggle_done(self, todo_id: int) -> None:
         self.storage.toggle_done(todo_id)
 
+    def update_todo_title(self, todo_id: int, title: str) -> None:
+        self.storage.update_todo_title(todo_id, title)
+
+    def update_todo_due_at(
+        self,
+        todo_id: int,
+        due_enabled: bool,
+        due_date: QDate,
+        due_time: QTime,
+    ) -> None:
+        due_at = None
+        if due_enabled:
+            due_at = QDateTime(due_date, due_time).toString(Qt.ISODate)
+        self.storage.update_todo_due_at(todo_id, due_at)
+
     def delete_completed(self) -> None:
         self.storage.delete_completed()
+
+    def delete_todo(self, todo_id: int) -> None:
+        self.storage.delete_todo(todo_id)
 
     def update_order(self, todo_ids: list[int]) -> None:
         self.storage.update_order(todo_ids)

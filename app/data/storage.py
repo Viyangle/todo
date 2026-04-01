@@ -124,6 +124,34 @@ class TodoStorage:
             )
             conn.commit()
 
+    def update_todo_title(self, todo_id: int, title: str) -> None:
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("Todo title cannot be empty")
+
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE todos
+                SET title = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (clean_title, todo_id),
+            )
+            conn.commit()
+
+    def update_todo_due_at(self, todo_id: int, due_at: str | None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE todos
+                SET due_at = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (due_at, todo_id),
+            )
+            conn.commit()
+
     def update_order(self, todo_ids: Iterable[int]) -> None:
         with self._connect() as conn:
             for index, todo_id in enumerate(todo_ids, start=1):
@@ -136,6 +164,11 @@ class TodoStorage:
     def delete_completed(self) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM todos WHERE done = 1")
+            conn.commit()
+
+    def delete_todo(self, todo_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
             conn.commit()
 
     def add_tarot_reading(

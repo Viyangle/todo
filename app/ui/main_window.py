@@ -7,8 +7,10 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
+    QInputDialog,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QVBoxLayout,
     QWidget,
@@ -18,7 +20,7 @@ from app.core.content_service import ContentService
 from app.core.tarot_interpreter import TarotAIConfig, TarotInterpreter
 from app.data.storage import TodoStorage
 from app.ui.controllers import TarotController, TodoController
-from app.ui.pages import MainPageView, SettingsPageView, TarotHistoryPageView, TarotPageView
+from app.ui.pages import MainPageView, SettingsPageView, TarotHistoryPageView, TarotPageView, TodoDueDateDialog
 from app.ui.window_manager import WindowManager
 from app.ui.widgets import TitleBar, TodoRowWidget
 
@@ -249,6 +251,8 @@ class MainWindow(QMainWindow):
         self.due_minute_combo.currentTextChanged.connect(self._on_due_time_changed)
         self.main_page.add_button.clicked.connect(self.add_todo)
         self.todo_list.order_changed.connect(self.persist_current_order)
+        self.todo_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.todo_list.customContextMenuRequested.connect(self._show_todo_context_menu)
         self.main_page.reset_button.clicked.connect(self._window_manager.restore_default_size)
         self.main_page.config_button.clicked.connect(self._window_manager.show_settings_page)
         self.main_page.tarot_button.clicked.connect(self._window_manager.show_tarot_page)
@@ -574,6 +578,8 @@ class MainWindow(QMainWindow):
         for todo in self._todo_controller.list_todos():
             item = QListWidgetItem("")
             item.setData(Qt.UserRole, todo.id)
+            item.setData(Qt.UserRole + 1, todo.title)
+            item.setData(Qt.UserRole + 2, todo.due_at)
             item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             item.setFlags(item.flags() | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled | Qt.ItemIsSelectable)
 
@@ -617,6 +623,102 @@ class MainWindow(QMainWindow):
             return
 
         self._todo_controller.toggle_done(int(todo_id))
+        self._refresh_list(keep_scroll=True)
+
+    def _show_todo_context_menu(self, position: QPoint) -> None:
+        item = self.todo_list.itemAt(position)
+        if item is None:
+            return
+
+        self.todo_list.setCurrentItem(item)
+        menu = QMenu(self)
+        edit_title_action = menu.addAction("Edit title")
+        edit_due_action = menu.addAction("Edit due time")
+        clear_due_action = menu.addAction("Clear due time")
+        menu.addSeparator()
+        delete_action = menu.addAction("Delete task")
+
+        selected_action = menu.exec(self.todo_list.viewport().mapToGlobal(position))
+        if selected_action is edit_title_action:
+            self._edit_todo_title(item)
+        elif selected_action is edit_due_action:
+            self._edit_todo_due_time(item)
+        elif selected_action is clear_due_action:
+            self._clear_todo_due_time(item)
+        elif selected_action is delete_action:
+            self._delete_todo(item)
+
+    def _edit_todo_title(self, item: QListWidgetItem) -> None:
+        todo_id = item.data(Qt.UserRole)
+        current_title = item.data(Qt.UserRole + 1) or ""
+        if todo_id is None:
+            return
+
+        new_title, accepted = QInputDialog.getText(
+            self,
+            "Edit Title",
+            "Task title",
+            text=str(current_title),
+        )
+        if not accepted:
+            return
+
+        try:
+            self._todo_controller.update_todo_title(int(todo_id), new_title)
+        except ValueError as error:
+            QMessageBox.warning(self, "Warning", str(error))
+            return
+        self._refresh_list(keep_scroll=True)
+
+    def _edit_todo_due_time(self, item: QListWidgetItem) -> None:
+        todo_id = item.data(Qt.UserRole)
+        due_at = item.data(Qt.UserRole + 2)
+        if todo_id is None:
+            return
+
+        dialog = TodoDueDateDialog(str(due_at) if due_at else None, self)
+        if dialog.exec() != TodoDueDateDialog.Accepted:
+            return
+
+        due_date, due_time = dialog.selected_due()
+        self._todo_controller.update_todo_due_at(
+            int(todo_id),
+            due_enabled=True,
+            due_date=due_date,
+            due_time=due_time,
+        )
+        self._refresh_list(keep_scroll=True)
+
+    def _clear_todo_due_time(self, item: QListWidgetItem) -> None:
+        todo_id = item.data(Qt.UserRole)
+        if todo_id is None:
+            return
+
+        self._todo_controller.update_todo_due_at(
+            int(todo_id),
+            due_enabled=False,
+            due_date=QDate.currentDate(),
+            due_time=QTime(0, 0),
+        )
+        self._refresh_list(keep_scroll=True)
+
+    def _delete_todo(self, item: QListWidgetItem) -> None:
+        todo_id = item.data(Qt.UserRole)
+        title = item.data(Qt.UserRole + 1) or "this task"
+        if todo_id is None:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Delete Task",
+            f"Delete '{title}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        self._todo_controller.delete_todo(int(todo_id))
         self._refresh_list(keep_scroll=True)
 
     def delete_completed(self) -> None:
