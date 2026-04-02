@@ -247,8 +247,10 @@ class TarotPageView(QWidget):
 
         controls = QHBoxLayout()
         controls.setSpacing(8)
-        self.draw_button = QPushButton("draw three cards")
+        self.spread_combo = QComboBox(self)
+        self.draw_button = QPushButton("draw")
         self.history_button = QPushButton("history")
+        controls.addWidget(self.spread_combo, 1)
         controls.addWidget(self.draw_button)
         controls.addStretch()
         controls.addWidget(self.history_button)
@@ -268,9 +270,24 @@ class TarotPageView(QWidget):
         cards_grid.setHorizontalSpacing(10)
         cards_grid.setVerticalSpacing(10)
 
-        self.tarot_past_box, self.tarot_past_name, self.tarot_past_body = self._build_card_box("Past")
-        self.tarot_present_box, self.tarot_present_name, self.tarot_present_body = self._build_card_box("Present")
-        self.tarot_future_box, self.tarot_future_name, self.tarot_future_body = self._build_card_box("Future")
+        (
+            self.tarot_past_box,
+            self.tarot_past_title,
+            self.tarot_past_name,
+            self.tarot_past_body,
+        ) = self._build_card_box("Past")
+        (
+            self.tarot_present_box,
+            self.tarot_present_title,
+            self.tarot_present_name,
+            self.tarot_present_body,
+        ) = self._build_card_box("Present")
+        (
+            self.tarot_future_box,
+            self.tarot_future_title,
+            self.tarot_future_name,
+            self.tarot_future_body,
+        ) = self._build_card_box("Future")
 
         self.tarot_summary_box = QFrame(self.tarot_card_panel)
         self.tarot_summary_box.setObjectName("tarotSummaryBox")
@@ -370,7 +387,7 @@ class TarotPageView(QWidget):
         self.loading_result_label.setFixedHeight(38)
         overlay_layout.addWidget(self.loading_result_label)
 
-    def _build_card_box(self, title: str) -> tuple[QFrame, QLabel, QLabel]:
+    def _build_card_box(self, title: str) -> tuple[QFrame, QLabel, QLabel, QLabel]:
         box = QFrame(self.tarot_card_panel)
         box.setObjectName("tarotCardBox")
         box_layout = QVBoxLayout(box)
@@ -385,6 +402,7 @@ class TarotPageView(QWidget):
         name_label.setObjectName("tarotCardName")
         name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         name_label.setMinimumHeight(30)
+        name_label.setWordWrap(True)
 
         body_label = QLabel("No card yet.")
         body_label.setWordWrap(True)
@@ -394,7 +412,7 @@ class TarotPageView(QWidget):
         box_layout.addWidget(name_label)
         box_layout.addWidget(body_label)
         box_layout.addStretch()
-        return box, name_label, body_label
+        return box, title_label, name_label, body_label
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -418,6 +436,12 @@ class TarotHistoryPageView(QWidget):
         title = QLabel("Tarot History")
         title.setStyleSheet("font-size: 16px; font-weight: 700;")
         layout.addWidget(title)
+
+        filter_row = QHBoxLayout()
+        self.favorites_only_checkbox = QCheckBox("favorites only")
+        filter_row.addWidget(self.favorites_only_checkbox)
+        filter_row.addStretch()
+        layout.addLayout(filter_row)
 
         self.tarot_history_list = QListWidget(self)
         layout.addWidget(self.tarot_history_list)

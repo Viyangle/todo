@@ -50,6 +50,7 @@ class TodoStorage:
                     spread_type TEXT NOT NULL,
                     cards_json TEXT NOT NULL,
                     summary TEXT NOT NULL,
+                    is_favorite INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -58,17 +59,24 @@ class TodoStorage:
             conn.commit()
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
-        columns = {
+        todo_columns = {
             row["name"]
             for row in conn.execute("PRAGMA table_info(todos)").fetchall()
         }
 
-        if "sort_order" not in columns:
+        if "sort_order" not in todo_columns:
             conn.execute("ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
             conn.execute("UPDATE todos SET sort_order = id WHERE sort_order = 0")
 
-        if "due_at" not in columns:
+        if "due_at" not in todo_columns:
             conn.execute("ALTER TABLE todos ADD COLUMN due_at TEXT")
+
+        tarot_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(tarot_readings)").fetchall()
+        }
+        if "is_favorite" not in tarot_columns:
+            conn.execute("ALTER TABLE tarot_readings ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
 
     def list_todos(self) -> List[TodoItem]:
         with self._connect() as conn:
@@ -190,7 +198,7 @@ class TodoStorage:
             reading_id = int(cursor.lastrowid)
             row = conn.execute(
                 """
-                SELECT id, question, spread_type, cards_json, summary, created_at
+                SELECT id, question, spread_type, cards_json, summary, created_at, is_favorite
                 FROM tarot_readings
                 WHERE id = ?
                 """,
@@ -199,9 +207,11 @@ class TodoStorage:
             conn.execute(
                 """
                 DELETE FROM tarot_readings
-                WHERE id NOT IN (
+                WHERE is_favorite = 0
+                  AND id NOT IN (
                     SELECT id
                     FROM tarot_readings
+                    WHERE is_favorite = 0
                     ORDER BY id DESC
                     LIMIT ?
                 )
@@ -217,19 +227,68 @@ class TodoStorage:
             cards_json=row["cards_json"],
             summary=row["summary"],
             created_at=row["created_at"],
+            is_favorite=bool(row["is_favorite"]),
         )
 
-    def list_tarot_readings(self, limit: int = 50) -> List[TarotReading]:
+    def set_tarot_reading_favorite(self, reading_id: int, is_favorite: bool) -> None:
         with self._connect() as conn:
-            rows = conn.execute(
+            conn.execute(
                 """
-                SELECT id, question, spread_type, cards_json, summary, created_at
-                FROM tarot_readings
-                ORDER BY id DESC
-                LIMIT ?
+                UPDATE tarot_readings
+                SET is_favorite = ?
+                WHERE id = ?
                 """,
-                (max(1, limit),),
-            ).fetchall()
+                (1 if is_favorite else 0, reading_id),
+            )
+            conn.commit()
+
+    def get_tarot_reading(self, reading_id: int) -> TarotReading | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, question, spread_type, cards_json, summary, created_at, is_favorite
+                FROM tarot_readings
+                WHERE id = ?
+                """,
+                (reading_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return TarotReading(
+            id=row["id"],
+            question=row["question"],
+            spread_type=row["spread_type"],
+            cards_json=row["cards_json"],
+            summary=row["summary"],
+            created_at=row["created_at"],
+            is_favorite=bool(row["is_favorite"]),
+        )
+
+    def list_tarot_readings(self, limit: int = 50, favorites_only: bool = False) -> List[TarotReading]:
+        with self._connect() as conn:
+            if favorites_only:
+                rows = conn.execute(
+                    """
+                    SELECT id, question, spread_type, cards_json, summary, created_at, is_favorite
+                    FROM tarot_readings
+                    WHERE is_favorite = 1
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (max(1, limit),),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id, question, spread_type, cards_json, summary, created_at, is_favorite
+                    FROM tarot_readings
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (max(1, limit),),
+                ).fetchall()
 
         return [
             TarotReading(
@@ -239,6 +298,7 @@ class TodoStorage:
                 cards_json=row["cards_json"],
                 summary=row["summary"],
                 created_at=row["created_at"],
+                is_favorite=bool(row["is_favorite"]),
             )
             for row in rows
         ]

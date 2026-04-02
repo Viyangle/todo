@@ -1,4 +1,3 @@
-import json
 import os
 
 from PySide6.QtCore import QDate, QObject, QPoint, QSettings, QSize, Qt, QThread, QTime, QTimer, Signal
@@ -24,43 +23,84 @@ from app.ui.pages import MainPageView, SettingsPageView, TarotHistoryPageView, T
 from app.ui.window_manager import WindowManager
 from app.ui.widgets import TitleBar, TodoRowWidget
 
-TAROT_NAME_ZH = {
-    "The Fool": "愚者",
-    "The Magician": "魔术师",
-    "The High Priestess": "女祭司",
-    "The Empress": "女皇",
-    "The Emperor": "皇帝",
-    "The Lovers": "恋人",
-    "The Chariot": "战车",
-    "Strength": "力量",
-    "The Hermit": "隐者",
-    "Wheel of Fortune": "命运之轮",
-    "Justice": "正义",
-    "The Hanged Man": "倒吊人",
-    "Death": "死神",
-    "Temperance": "节制",
-    "The Devil": "恶魔",
-    "The Tower": "高塔",
-    "The Star": "星星",
-    "The Moon": "月亮",
-    "The Sun": "太阳",
-    "Judgement": "审判",
-    "The World": "世界",
+TAROT_NAME_EN = {
+    "The Fool": "The Fool",
+    "The Magician": "The Magician",
+    "The High Priestess": "The High Priestess",
+    "The Empress": "The Empress",
+    "The Emperor": "The Emperor",
+    "The Lovers": "The Lovers",
+    "The Chariot": "The Chariot",
+    "Strength": "Strength",
+    "The Hermit": "The Hermit",
+    "Wheel of Fortune": "Wheel of Fortune",
+    "Justice": "Justice",
+    "The Hanged Man": "The Hanged Man",
+    "Death": "Death",
+    "Temperance": "Temperance",
+    "The Devil": "The Devil",
+    "The Tower": "The Tower",
+    "The Star": "The Star",
+    "The Moon": "The Moon",
+    "The Sun": "The Sun",
+    "Judgement": "Judgement",
+    "The World": "The World",
 }
+
+# Keep literals ASCII-only via Unicode escapes to avoid source-file encoding corruption.
+TAROT_NAME_ZH = {
+    "The Fool": "\u611a\u8005",
+    "The Magician": "\u9b54\u672f\u5e08",
+    "The High Priestess": "\u5973\u796d\u53f8",
+    "The Empress": "\u5973\u7687",
+    "The Emperor": "\u7687\u5e1d",
+    "The Lovers": "\u604b\u4eba",
+    "The Chariot": "\u6218\u8f66",
+    "Strength": "\u529b\u91cf",
+    "The Hermit": "\u9690\u8005",
+    "Wheel of Fortune": "\u547d\u8fd0\u4e4b\u8f6e",
+    "Justice": "\u6b63\u4e49",
+    "The Hanged Man": "\u5012\u540a\u4eba",
+    "Death": "\u6b7b\u795e",
+    "Temperance": "\u8282\u5236",
+    "The Devil": "\u6076\u9b54",
+    "The Tower": "\u9ad8\u5854",
+    "The Star": "\u661f\u661f",
+    "The Moon": "\u6708\u4eae",
+    "The Sun": "\u592a\u9633",
+    "Judgement": "\u5ba1\u5224",
+    "The World": "\u4e16\u754c",
+}
+
+
+def _safe_tarot_name_map() -> dict[str, str]:
+    # If the map gets corrupted by encoding conversion, fall back to English labels.
+    try:
+        if set(TAROT_NAME_ZH.keys()) != set(TAROT_NAME_EN.keys()):
+            return dict(TAROT_NAME_EN)
+        for key, value in TAROT_NAME_ZH.items():
+            if not key or not value:
+                return dict(TAROT_NAME_EN)
+            if "\ufffd" in key or "\ufffd" in value:
+                return dict(TAROT_NAME_EN)
+        return dict(TAROT_NAME_ZH)
+    except Exception:
+        return dict(TAROT_NAME_EN)
 
 
 class TarotDrawWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, controller: TarotController, question: str) -> None:
+    def __init__(self, controller: TarotController, question: str, spread_type: str) -> None:
         super().__init__()
         self._controller = controller
         self._question = question
+        self._spread_type = spread_type
 
     def run(self) -> None:
         try:
-            reading = self._controller.draw_spread(self._question)
+            reading = self._controller.draw_spread(self._question, self._spread_type)
         except Exception as error:
             self.failed.emit(str(error))
             return
@@ -105,7 +145,7 @@ class MainWindow(QMainWindow):
             storage=storage,
             interpreter=self._tarot_interpreter,
             tarot_cards=self._tarot_cards,
-            tarot_name_map=TAROT_NAME_ZH,
+            tarot_name_map=_safe_tarot_name_map(),
         )
         self._current_quote: dict[str, str] | None = None
         self._tarot_thread: QThread | None = None
@@ -212,15 +252,19 @@ class MainWindow(QMainWindow):
 
     def _alias_tarot_page_widgets(self) -> None:
         self.tarot_question_edit = self.tarot_page.tarot_question_edit
+        self.tarot_spread_combo = self.tarot_page.spread_combo
         self.tarot_card_panel = self.tarot_page.tarot_card_panel
         self.tarot_spread_label = self.tarot_page.tarot_spread_label
         self.tarot_past_box = self.tarot_page.tarot_past_box
+        self.tarot_past_title = self.tarot_page.tarot_past_title
         self.tarot_past_name = self.tarot_page.tarot_past_name
         self.tarot_past_body = self.tarot_page.tarot_past_body
         self.tarot_present_box = self.tarot_page.tarot_present_box
+        self.tarot_present_title = self.tarot_page.tarot_present_title
         self.tarot_present_name = self.tarot_page.tarot_present_name
         self.tarot_present_body = self.tarot_page.tarot_present_body
         self.tarot_future_box = self.tarot_page.tarot_future_box
+        self.tarot_future_title = self.tarot_page.tarot_future_title
         self.tarot_future_name = self.tarot_page.tarot_future_name
         self.tarot_future_body = self.tarot_page.tarot_future_body
         self.tarot_summary_box = self.tarot_page.tarot_summary_box
@@ -240,6 +284,7 @@ class MainWindow(QMainWindow):
 
     def _alias_tarot_history_widgets(self) -> None:
         self.tarot_history_list = self.tarot_history_page.tarot_history_list
+        self.tarot_history_favorites_only_checkbox = self.tarot_history_page.favorites_only_checkbox
 
     def _configure_page_widgets(self) -> None:
         self.input_edit.returnPressed.connect(self.add_todo)
@@ -274,6 +319,7 @@ class MainWindow(QMainWindow):
         self.tarot_page.draw_button.clicked.connect(self.draw_tarot_spread)
         self.tarot_page.history_button.clicked.connect(self._window_manager.show_tarot_history_page)
         self.tarot_page.back_button.clicked.connect(self._window_manager.show_main_page)
+        self.tarot_spread_combo.currentIndexChanged.connect(self._on_tarot_spread_changed)
         self.tarot_loading_game_combo.currentIndexChanged.connect(self._on_loading_game_changed)
         self.tarot_loading_difficulty_combo.currentIndexChanged.connect(self._update_loading_game_best_label)
         self.tarot_loading_start_button.clicked.connect(self._start_loading_game)
@@ -288,7 +334,11 @@ class MainWindow(QMainWindow):
         )
 
         self.tarot_history_list.itemClicked.connect(self.show_tarot_history_item)
+        self.tarot_history_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tarot_history_list.customContextMenuRequested.connect(self._show_tarot_history_context_menu)
+        self.tarot_history_favorites_only_checkbox.toggled.connect(self._refresh_tarot_history)
         self.tarot_history_page.back_button.clicked.connect(self._window_manager.show_tarot_page)
+        self._configure_tarot_spreads()
 
         self._due_date = self.due_calendar.selectedDate()
         hour = int(self.due_hour_combo.currentText())
@@ -352,9 +402,9 @@ class MainWindow(QMainWindow):
                 border-radius: 12px;
             }}
             #tarotCardName {{
-                color: rgb(24, 67, 112);
-                font-size: 18px;
-                font-weight: 800;
+                color: rgb(14, 53, 94);
+                font-size: 22px;
+                font-weight: 900;
             }}
             #tarotSummaryBox {{
                 background-color: rgba(255, 231, 209, 208);
@@ -733,20 +783,22 @@ class MainWindow(QMainWindow):
             return
 
         question = self.tarot_question_edit.text().strip()
-        self._start_tarot_loading(question)
+        spread_type = str(self.tarot_spread_combo.currentData() or "past_present_future")
+        self._start_tarot_loading(question, spread_type)
 
-    def _start_tarot_loading(self, question: str) -> None:
+    def _start_tarot_loading(self, question: str, spread_type: str) -> None:
         self._tarot_loading = True
         self._tarot_result_ready = False
         self.tarot_page.draw_button.setEnabled(False)
         self.tarot_question_edit.setEnabled(False)
+        self.tarot_spread_combo.setEnabled(False)
         self.tarot_loading_status_label.setText("Reading your spread. Pick a quick round.")
         self.tarot_summary_body.setText("Interpreting...")
         self.tarot_loading_result_label.setText(self._default_loading_hint())
         self._show_tarot_loading_overlay()
 
         self._tarot_thread = QThread(self)
-        self._tarot_worker = TarotDrawWorker(self._tarot_controller, question)
+        self._tarot_worker = TarotDrawWorker(self._tarot_controller, question, spread_type)
         self._tarot_worker.moveToThread(self._tarot_thread)
         self._tarot_thread.started.connect(self._tarot_worker.run)
         self._tarot_worker.finished.connect(self._on_tarot_draw_finished)
@@ -770,7 +822,13 @@ class MainWindow(QMainWindow):
         self._tarot_result_ready = True
         self.tarot_page.draw_button.setEnabled(True)
         self.tarot_question_edit.setEnabled(True)
-        self._show_tarot_reading(reading.question, reading.cards, reading.summary)
+        self.tarot_spread_combo.setEnabled(True)
+        self._show_tarot_reading(
+            reading.question,
+            reading.spread_type,
+            reading.cards,
+            reading.summary,
+        )
         self._refresh_tarot_history()
         self.tarot_loading_status_label.setText("The reading is ready. You can keep playing and open it when you want.")
         self.tarot_loading_result_label.setText("Reading finished. Click 'view reading' whenever you're done.")
@@ -781,6 +839,7 @@ class MainWindow(QMainWindow):
         self._tarot_result_ready = True
         self.tarot_page.draw_button.setEnabled(True)
         self.tarot_question_edit.setEnabled(True)
+        self.tarot_spread_combo.setEnabled(True)
         self.tarot_summary_body.setText("Unable to finish the reading.")
         self.tarot_loading_status_label.setText("The reading failed. You can close this panel whenever you want.")
         self.tarot_loading_result_label.setText(error_message or "Tarot reading failed.")
@@ -967,42 +1026,135 @@ class MainWindow(QMainWindow):
         if not self._tarot_result_ready:
             self.tarot_loading_result_label.setText(self._default_loading_hint())
 
-    def _show_tarot_reading(self, question: str, cards: list[dict[str, str]], summary: str) -> None:
-        self.tarot_spread_label.setText("Spread: Past / Present / Future")
+    def _configure_tarot_spreads(self) -> None:
+        self.tarot_spread_combo.blockSignals(True)
+        self.tarot_spread_combo.clear()
+        for label, spread_key in self._tarot_controller.spread_choices():
+            self.tarot_spread_combo.addItem(label, spread_key)
+        default_index = max(0, self.tarot_spread_combo.findData("past_present_future"))
+        self.tarot_spread_combo.setCurrentIndex(default_index)
+        self.tarot_spread_combo.blockSignals(False)
+        self._on_tarot_spread_changed()
 
-        by_position = {card.get("position", ""): card for card in cards}
-        past = by_position.get("Past", {})
-        present = by_position.get("Present", {})
-        future = by_position.get("Future", {})
+    def _on_tarot_spread_changed(self, _index: int | None = None) -> None:
+        spread_type = str(self.tarot_spread_combo.currentData() or "past_present_future")
+        self._apply_spread_preview(spread_type)
 
-        self.tarot_past_name.setText(str(past.get("name", "-")))
-        self.tarot_present_name.setText(str(present.get("name", "-")))
-        self.tarot_future_name.setText(str(future.get("name", "-")))
+    def _group_cards_for_display(self, cards: list[dict[str, str]]) -> list[list[dict[str, str]]]:
+        if len(cards) <= 3:
+            groups = [[card] for card in cards]
+            while len(groups) < 3:
+                groups.append([])
+            return groups
 
-        self.tarot_past_body.setText(
-            f"{past.get('orientation', '-')}\n"
-            f"Keywords: {past.get('keywords', '-')}"
-        )
-        self.tarot_present_body.setText(
-            f"{present.get('orientation', '-')}\n"
-            f"Keywords: {present.get('keywords', '-')}"
-        )
-        self.tarot_future_body.setText(
-            f"{future.get('orientation', '-')}\n"
-            f"Keywords: {future.get('keywords', '-')}"
-        )
+        return [cards[:4], cards[4:7], cards[7:]]
+
+    def _format_tarot_group_body(self, group: list[dict[str, str]]) -> str:
+        if not group:
+            return "No card."
+        lines = []
+        for card in group:
+            lines.append(
+                f"{card.get('position', '-')}: {card.get('name', '-')}"
+                f"\n{card.get('orientation', '-')}"
+                f"\nKeywords: {card.get('keywords', '-')}"
+            )
+        return "\n\n".join(lines)
+
+    def _format_group_names(self, group: list[dict[str, str]]) -> str:
+        if not group:
+            return "-"
+        names = [str(card.get("name", "-")) for card in group]
+        if len(names) == 1:
+            return names[0]
+        if len(names) <= 3:
+            return " | ".join(names)
+        return " | ".join(names[:3]) + f" +{len(names) - 3}"
+
+    def _apply_spread_preview(self, spread_type: str) -> None:
+        spread_label = self._tarot_controller.spread_label(spread_type)
+        self.tarot_spread_label.setText(f"Spread: {spread_label}")
+        self.tarot_summary_body.setText("Draw a spread to see the interpretation.")
+
+        if spread_type == "single_card":
+            self.tarot_past_box.show()
+            self.tarot_present_box.hide()
+            self.tarot_future_box.hide()
+            self.tarot_past_title.setText("Card")
+            self.tarot_past_name.setText("-")
+            self.tarot_past_body.setText("No card yet.")
+            return
+
+        self.tarot_past_box.show()
+        self.tarot_present_box.show()
+        self.tarot_future_box.show()
+        if spread_type == "celtic_cross":
+            self.tarot_past_title.setText("Cards 1-4")
+            self.tarot_present_title.setText("Cards 5-7")
+            self.tarot_future_title.setText("Cards 8-10")
+        else:
+            self.tarot_past_title.setText("Past")
+            self.tarot_present_title.setText("Present")
+            self.tarot_future_title.setText("Future")
+
+        self.tarot_past_name.setText("-")
+        self.tarot_present_name.setText("-")
+        self.tarot_future_name.setText("-")
+        self.tarot_past_body.setText("No card yet.")
+        self.tarot_present_body.setText("No card yet.")
+        self.tarot_future_body.setText("No card yet.")
+
+    def _show_tarot_reading(
+        self,
+        question: str,
+        spread_type: str,
+        cards: list[dict[str, str]],
+        summary: str,
+    ) -> None:
+        spread_index = self.tarot_spread_combo.findData(spread_type)
+        if spread_index >= 0 and self.tarot_spread_combo.currentIndex() != spread_index:
+            self.tarot_spread_combo.blockSignals(True)
+            self.tarot_spread_combo.setCurrentIndex(spread_index)
+            self.tarot_spread_combo.blockSignals(False)
+
+        self._apply_spread_preview(spread_type)
+        spread_label = self._tarot_controller.spread_label(spread_type)
+        question_text = question.strip() if question else "No question"
+        self.tarot_spread_label.setText(f"Spread: {spread_label} | Question: {question_text}")
+
+        groups = self._group_cards_for_display(cards)
+        name_labels = (self.tarot_past_name, self.tarot_present_name, self.tarot_future_name)
+        title_labels = (self.tarot_past_title, self.tarot_present_title, self.tarot_future_title)
+        body_labels = (self.tarot_past_body, self.tarot_present_body, self.tarot_future_body)
+
+        if len(cards) <= 3:
+            titles = [str(card.get("position", f"Card {index + 1}")) for index, card in enumerate(cards)]
+            while len(titles) < 3:
+                titles.append(f"Card {len(titles) + 1}")
+        else:
+            titles = ["Card Group A", "Card Group B", "Card Group C"]
+
+        for index in range(3):
+            group = groups[index]
+            title_labels[index].setText(titles[index])
+            name_labels[index].setText(self._format_group_names(group))
+            body_labels[index].setText(self._format_tarot_group_body(group))
         self.tarot_summary_body.setText(summary)
 
-    def _refresh_tarot_history(self) -> None:
+    def _refresh_tarot_history(self, *_args) -> None:
         if not hasattr(self, "tarot_history_list"):
             return
 
+        favorites_only = self.tarot_history_favorites_only_checkbox.isChecked()
         self.tarot_history_list.clear()
-        for reading in self._tarot_controller.list_history(limit=50):
+        for reading in self._tarot_controller.list_history(limit=50, favorites_only=favorites_only):
             question = reading.question if reading.question else "No question"
-            preview = f"{reading.created_at} | {question}"
+            star = "[*]" if reading.is_favorite else "[ ]"
+            spread_label = self._tarot_controller.spread_label(reading.spread_type)
+            preview = f"{star} {reading.created_at} | {spread_label} | {question}"
             item = QListWidgetItem(preview)
             item.setData(Qt.UserRole, reading.id)
+            item.setData(Qt.UserRole + 1, reading.is_favorite)
             self.tarot_history_list.addItem(item)
 
     def show_tarot_history_item(self, item: QListWidgetItem) -> None:
@@ -1014,5 +1166,35 @@ class MainWindow(QMainWindow):
         if reading is None:
             return
 
-        self._show_tarot_reading(reading.question, reading.cards, reading.summary)
+        self._show_tarot_reading(
+            reading.question,
+            reading.spread_type,
+            reading.cards,
+            reading.summary,
+        )
         self._window_manager.set_current_page(self.tarot_page)
+
+    def _show_tarot_history_context_menu(self, position: QPoint) -> None:
+        item = self.tarot_history_list.itemAt(position)
+        if item is None:
+            return
+
+        self.tarot_history_list.setCurrentItem(item)
+        reading_id = item.data(Qt.UserRole)
+        if reading_id is None:
+            return
+
+        is_favorite = bool(item.data(Qt.UserRole + 1))
+        menu = QMenu(self)
+        toggle_text = "Unfavorite" if is_favorite else "Favorite"
+        toggle_action = menu.addAction(toggle_text)
+        open_action = menu.addAction("Open")
+
+        selected_action = menu.exec(self.tarot_history_list.viewport().mapToGlobal(position))
+        if selected_action is toggle_action:
+            self._tarot_controller.set_history_favorite(int(reading_id), not is_favorite)
+            self._refresh_tarot_history()
+            return
+        if selected_action is open_action:
+            self.show_tarot_history_item(item)
+

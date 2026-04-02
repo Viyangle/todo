@@ -13,9 +13,12 @@ from app.core.models import TarotReading, TodoItem
 
 @dataclass
 class DrawnTarotReading:
+    reading_id: int
     question: str
+    spread_type: str
     cards: list[dict[str, str]]
     summary: str
+    is_favorite: bool = False
 
 
 class TodoController:
@@ -78,6 +81,23 @@ class TodoController:
 
 
 class TarotController:
+    SPREAD_POSITIONS: dict[str, list[str]] = {
+        "single_card": ["Card"],
+        "past_present_future": ["Past", "Present", "Future"],
+        "celtic_cross": [
+            "Present",
+            "Challenge",
+            "Past",
+            "Future",
+            "Above",
+            "Below",
+            "Advice",
+            "Environment",
+            "Hopes/Fears",
+            "Outcome",
+        ],
+    }
+
     def __init__(
         self,
         storage: TodoStorage,
@@ -93,41 +113,66 @@ class TarotController:
     def has_cards(self) -> bool:
         return bool(self.tarot_cards)
 
-    def draw_spread(self, question: str) -> DrawnTarotReading:
-        if len(self.tarot_cards) >= 3:
-            selected_cards = random.sample(self.tarot_cards, 3)
+    def spread_choices(self) -> list[tuple[str, str]]:
+        return [
+            ("Single Card", "single_card"),
+            ("Past / Present / Future", "past_present_future"),
+            ("Celtic Cross", "celtic_cross"),
+        ]
+
+    def spread_label(self, spread_type: str) -> str:
+        labels = {value: label for label, value in self.spread_choices()}
+        return labels.get(spread_type, "Past / Present / Future")
+
+    def draw_spread(self, question: str, spread_type: str) -> DrawnTarotReading:
+        positions = self.SPREAD_POSITIONS.get(spread_type, self.SPREAD_POSITIONS["past_present_future"])
+        card_count = len(positions)
+        if len(self.tarot_cards) >= card_count:
+            selected_cards = random.sample(self.tarot_cards, card_count)
         else:
-            selected_cards = [random.choice(self.tarot_cards) for _ in range(3)]
+            selected_cards = [random.choice(self.tarot_cards) for _ in range(card_count)]
 
         spread_cards = [
-            self._draw_one_tarot_card(selected_cards[0], "Past"),
-            self._draw_one_tarot_card(selected_cards[1], "Present"),
-            self._draw_one_tarot_card(selected_cards[2], "Future"),
+            self._draw_one_tarot_card(card_data, position)
+            for card_data, position in zip(selected_cards, positions)
         ]
         summary = self.interpreter.build_summary(question=question, cards=spread_cards)
-        self.storage.add_tarot_reading(
-            spread_type="past_present_future",
+        stored_reading = self.storage.add_tarot_reading(
+            spread_type=spread_type,
             cards=spread_cards,
             summary=summary,
             question=question or None,
         )
-        return DrawnTarotReading(question=question, cards=spread_cards, summary=summary)
+        return DrawnTarotReading(
+            reading_id=stored_reading.id,
+            question=question,
+            spread_type=spread_type,
+            cards=spread_cards,
+            summary=summary,
+            is_favorite=stored_reading.is_favorite,
+        )
 
-    def list_history(self, limit: int = 50) -> list[TarotReading]:
-        return self.storage.list_tarot_readings(limit=limit)
+    def list_history(self, limit: int = 50, favorites_only: bool = False) -> list[TarotReading]:
+        return self.storage.list_tarot_readings(limit=limit, favorites_only=favorites_only)
 
     def get_history_item(self, reading_id: int, limit: int = 200) -> DrawnTarotReading | None:
-        readings = self.storage.list_tarot_readings(limit=limit)
-        selected = next((reading for reading in readings if reading.id == reading_id), None)
+        del limit
+        selected = self.storage.get_tarot_reading(reading_id)
         if selected is None:
             return None
 
         cards = self._deserialize_cards(selected.cards_json)
         return DrawnTarotReading(
+            reading_id=selected.id,
             question=selected.question or "",
+            spread_type=selected.spread_type,
             cards=cards,
             summary=selected.summary,
+            is_favorite=selected.is_favorite,
         )
+
+    def set_history_favorite(self, reading_id: int, is_favorite: bool) -> None:
+        self.storage.set_tarot_reading_favorite(reading_id, is_favorite)
 
     def _draw_one_tarot_card(self, card_data: dict[str, object], position: str) -> dict[str, str]:
         orientation = random.choice(("upright", "reversed"))

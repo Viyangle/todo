@@ -18,3 +18,4 @@ class TarotReading:
     cards_json: str
     summary: str
     created_at: str
+    is_favorite: bool = False
