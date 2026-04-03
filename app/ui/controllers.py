@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QDate, QDateTime, QTime, Qt
 
+from app.core.models import TarotReading, TodoItem
 from app.core.tarot_interpreter import TarotInterpreter
 from app.data.storage import TodoStorage
-from app.core.models import TarotReading, TodoItem
 
 
 @dataclass
@@ -25,13 +25,7 @@ class TodoController:
     def __init__(self, storage: TodoStorage) -> None:
         self.storage = storage
 
-    def add_todo(
-        self,
-        title: str,
-        due_enabled: bool,
-        due_date: QDate,
-        due_time: QTime,
-    ) -> None:
+    def add_todo(self, title: str, due_enabled: bool, due_date: QDate, due_time: QTime) -> None:
         due_at = None
         if due_enabled:
             due_at = QDateTime(due_date, due_time).toString(Qt.ISODate)
@@ -46,13 +40,7 @@ class TodoController:
     def update_todo_title(self, todo_id: int, title: str) -> None:
         self.storage.update_todo_title(todo_id, title)
 
-    def update_todo_due_at(
-        self,
-        todo_id: int,
-        due_enabled: bool,
-        due_date: QDate,
-        due_time: QTime,
-    ) -> None:
+    def update_todo_due_at(self, todo_id: int, due_enabled: bool, due_date: QDate, due_time: QTime) -> None:
         due_at = None
         if due_enabled:
             due_at = QDateTime(due_date, due_time).toString(Qt.ISODate)

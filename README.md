@@ -8,7 +8,7 @@
 
 - 支持输入任务后按回车，或点击 `+` 按钮添加待办
 - 支持为待办设置可选截止时间
-- 未设置截止时间的任务显示为“长期事务”
+- 未设置截止时间的任务显示为“长期事项”
 - 即将到期的任务会高亮提醒
 - 点击任务前方圆形按钮可切换完成 / 未完成状态
 - 支持拖拽调整待办顺序
@@ -16,11 +16,10 @@
 - 支持一键清空所有已完成任务
 - 支持 `refresh` 刷新待办列表
 
-### 主页附加内容
+### 首页附加内容
 
 - 待办列表下方显示哲学语录
 - 语录数据来自独立配置文件 `app/data/philosopher_quotes.json`
-- 当前内置叔本华、加缪、萨特、尼采等多条中文语录
 - 点击 `refresh` 会同时刷新待办列表和随机语录
 
 ### 窗口与交互
@@ -30,7 +29,7 @@
 - 支持拖动标题栏移动窗口
 - 拖到屏幕边缘附近时自动吸附
 - 右下角支持拖拽缩放
-- 自动保证窗口至少有一部分保持在屏幕内，避免拖丢
+- 自动保证窗口至少有一部分保持在屏幕内
 - 自动记忆窗口大小和位置
 - 支持系统托盘
 - 点击右上角 `-` 最小化到托盘
@@ -39,21 +38,22 @@
 
 ### 设置页
 
-- 可在主页点击 `config` 进入设置页
+- 可在首页点击 `config` 进入设置页
 - 支持设置默认窗口宽度和高度
 - 支持设置“即将到期”提醒时间窗口
 - 支持将当前窗口尺寸直接保存为默认尺寸
+- 支持配置塔罗 AI 的 API Key、Base URL 和模型名称
 
 ### 塔罗功能
 
 - 内置塔罗页面
-- 支持三张牌阵：`Past / Present / Future`
-- 可输入问题后抽取三张牌
-- 每张牌会随机正位或逆位
-- 显示卡牌名称、朝向、关键词与解读摘要
+- 支持三种牌阵：`Single Card`、`Past / Present / Future`、`Celtic Cross`
+- 可输入问题后抽牌
+- 每张牌会随机为正位或逆位
+- 显示牌名、朝向、关键词和简短解读
 - 抽牌结果会保存到本地 SQLite
-- 支持查看历史抽牌记录
-- 若配置了兼容 OpenAI 的模型接口，可生成更自然的塔罗总结
+- 支持查看历史记录和收藏记录
+- 如果配置了兼容 OpenAI API 的模型服务，可生成更自然的塔罗总结
 - 未配置模型时，会使用本地 fallback 摘要逻辑
 
 ## 项目结构
@@ -62,6 +62,7 @@
 todo/
   app/
     core/
+      content_service.py
       models.py
       tarot_interpreter.py
     data/
@@ -69,9 +70,15 @@ todo/
       storage.py
       tarot_cards.json
     ui/
+      game_widgets.py
       main_window.py
-  data/
-    todo.db
+      main_window_tarot.py
+      main_window_todo.py
+      pages.py
+      todo_widgets.py
+      widgets.py
+      window_manager.py
+      window_widgets.py
   main.py
   requirements.txt
   build.bat
@@ -115,7 +122,7 @@ data/todo.db
 dist/Todo/Todo.exe
 ```
 
-如果要拷贝到其他电脑，请复制整个 `dist/Todo` 目录，而不是只复制单个 `.exe` 文件。
+如果要复制到其他电脑，请复制整个 `dist/Todo` 目录，而不是只复制单个 `.exe` 文件。
 
 ## 可选模型配置
 
@@ -142,6 +149,6 @@ dist/Todo/Todo.exe
 ## 注意事项
 
 - 全局快捷键 `Ctrl + Shift + Space` 如果被其他程序占用，可能注册失败
-- 该项目当前主要面向 Windows，快捷键实现依赖 Windows 原生接口
-- 若直接关闭窗口，程序默认会隐藏到托盘，而不是退出
+- 当前项目主要面向 Windows，快捷键实现依赖 Windows 原生接口
+- 直接关闭窗口时，程序默认会隐藏到托盘，而不是退出
 - 需要彻底退出时，请使用右上角 `x` 或托盘菜单 `Quit`
