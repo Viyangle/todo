@@ -24,6 +24,14 @@ class WindowManager:
             minutes = 120
         return max(10, minutes)
 
+    def load_bangumi_min_votes(self) -> int:
+        saved_value = self.window.settings.value("prefs/bangumi_min_votes", 1000)
+        try:
+            value = int(saved_value)
+        except (TypeError, ValueError):
+            value = 1000
+        return max(0, value)
+
     def setup_tray(self) -> None:
         self.window.tray_icon = QSystemTrayIcon(self.window)
         icon = self.window.style().standardIcon(QStyle.SP_FileDialogDetailedView)
@@ -76,6 +84,7 @@ class WindowManager:
         self.window.default_width_spin.setValue(self.window._default_size.width())
         self.window.default_height_spin.setValue(self.window._default_size.height())
         self.window.warn_minutes_spin.setValue(self.window._due_soon_minutes)
+        self.window.bangumi_min_votes_spin.setValue(self.window._bangumi_min_votes)
         ai_config = self.window._load_ai_config()
         self.window.ai_api_key_edit.setText(ai_config.api_key)
         self.window.ai_base_url_edit.setText(ai_config.base_url)
@@ -90,6 +99,11 @@ class WindowManager:
         self.window._refresh_tarot_history()
         self.set_current_page(self.window.tarot_history_page)
 
+    def show_bangumi_page(self) -> None:
+        if hasattr(self.window, "_on_bangumi_min_heat_toggled"):
+            self.window._on_bangumi_min_heat_toggled(self.window.bangumi_min_heat_checkbox.isChecked())
+        self.set_current_page(self.window.bangumi_page)
+
     def show_main_page(self) -> None:
         self.set_current_page(self.window.main_page)
 
@@ -99,9 +113,11 @@ class WindowManager:
             self.window.default_height_spin.value(),
         )
         self.window._due_soon_minutes = self.window.warn_minutes_spin.value()
+        self.window._bangumi_min_votes = self.window.bangumi_min_votes_spin.value()
         ai_config = self.window._build_ai_config_from_inputs()
         self.window.settings.setValue("prefs/default_size", self.window._default_size)
         self.window.settings.setValue("prefs/warn_minutes", self.window._due_soon_minutes)
+        self.window.settings.setValue("prefs/bangumi_min_votes", self.window._bangumi_min_votes)
         self.window.settings.setValue("ai/api_key", ai_config.api_key)
         self.window.settings.setValue("ai/base_url", ai_config.base_url)
         self.window.settings.setValue("ai/model_name", ai_config.model_name)

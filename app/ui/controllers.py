@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QDate, QDateTime, QTime, Qt
 
+from app.core.bangumi_service import BangumiAnimeEntry, BangumiService
 from app.core.models import TarotReading, TodoItem
 from app.core.tarot_interpreter import TarotInterpreter
 from app.data.storage import TodoStorage
@@ -216,3 +217,24 @@ class TarotController:
                     }
                 )
         return cards
+
+
+class BangumiController:
+    def __init__(self, service: BangumiService) -> None:
+        self.service = service
+
+    def fetch_year_rankings(
+        self,
+        year: int,
+        ranking_type: str,
+        limit: int = 20,
+        min_votes: int = 0,
+        progress_callback=None,
+    ) -> list[BangumiAnimeEntry]:
+        return self.service.get_year_rankings(
+            year=year,
+            ranking_type=ranking_type,
+            limit=limit,
+            min_votes=min_votes,
+            progress_callback=progress_callback,
+        )

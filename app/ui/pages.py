@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QDate, QTime, Qt
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QCalendarWidget,
     QCheckBox,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSpinBox,
     QStackedWidget,
@@ -106,6 +108,7 @@ class MainPageView(QWidget):
         self.reset_button = QPushButton("default")
         self.config_button = QPushButton("config")
         self.tarot_button = QPushButton("tarot")
+        self.bangumi_button = QPushButton("bangumi")
         self.delete_button = QPushButton("clear")
         self.refresh_button = QPushButton("refresh")
         self.resize_handle = ResizeHandle(window, panel_parent)
@@ -113,6 +116,7 @@ class MainPageView(QWidget):
         action_layout.addWidget(self.reset_button)
         action_layout.addWidget(self.config_button)
         action_layout.addWidget(self.tarot_button)
+        action_layout.addWidget(self.bangumi_button)
         action_layout.addStretch()
         action_layout.addWidget(self.delete_button)
         action_layout.addWidget(self.refresh_button)
@@ -199,6 +203,7 @@ class SettingsPageView(QWidget):
         self.default_width_spin = QSpinBox(self)
         self.default_height_spin = QSpinBox(self)
         self.warn_minutes_spin = QSpinBox(self)
+        self.bangumi_min_votes_spin = QSpinBox(self)
         self.ai_api_key_edit = QLineEdit(self)
         self.ai_base_url_edit = QLineEdit(self)
         self.ai_model_edit = QLineEdit(self)
@@ -213,6 +218,7 @@ class SettingsPageView(QWidget):
         form_layout.addRow("Default Width", self.default_width_spin)
         form_layout.addRow("Default Height", self.default_height_spin)
         form_layout.addRow("Warning", self.warn_minutes_spin)
+        form_layout.addRow("Bangumi Min Votes", self.bangumi_min_votes_spin)
         form_layout.addRow("API Key", self.ai_api_key_edit)
         form_layout.addRow("Base URL", self.ai_base_url_edit)
         form_layout.addRow("Model", self.ai_model_edit)
@@ -451,3 +457,62 @@ class TarotHistoryPageView(QWidget):
         actions.addWidget(self.back_button)
         actions.addStretch()
         layout.addLayout(actions)
+
+
+class BangumiPageView(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        title = QLabel("Bangumi Annual Anime")
+        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        layout.addWidget(title)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+
+        self.year_spin = QSpinBox(self)
+        self.year_spin.setRange(1980, 2100)
+        self.year_spin.setPrefix("Year ")
+
+        self.ranking_combo = QComboBox(self)
+        self.ranking_combo.addItem("\u7efc\u5408", "comprehensive")
+        self.ranking_combo.addItem("\u6392\u540d", "score")
+        self.ranking_combo.addItem("\u70ed\u5ea6", "hot")
+        combo_metrics = QFontMetrics(self.ranking_combo.font())
+        combo_width = combo_metrics.horizontalAdvance("\u7efc\u5408\u699c") + 34
+        self.ranking_combo.setFixedWidth(combo_width)
+
+        self.limit_combo = QComboBox(self)
+        self.limit_combo.addItem("Top 10", 10)
+        self.limit_combo.addItem("Top 20", 20)
+        self.limit_combo.addItem("Top 50", 50)
+        self.limit_combo.setCurrentIndex(1)
+
+        self.min_heat_checkbox = QCheckBox("热度限制")
+
+        self.fetch_button = QPushButton("load")
+        controls.addWidget(self.year_spin)
+        controls.addWidget(self.ranking_combo)
+        controls.addWidget(self.limit_combo)
+        controls.addWidget(self.min_heat_checkbox)
+        controls.addWidget(self.fetch_button)
+        layout.addLayout(controls)
+
+        self.results_list = QListWidget(self)
+        self.results_list.setAlternatingRowColors(False)
+        layout.addWidget(self.results_list)
+
+        actions = QHBoxLayout()
+        self.back_button = QPushButton("back")
+        actions.addWidget(self.back_button)
+        actions.addStretch()
+        layout.addLayout(actions)
+
+    def render_rows(self, rows: list[str]) -> None:
+        self.results_list.clear()
+        for row in rows:
+            self.results_list.addItem(QListWidgetItem(row))
