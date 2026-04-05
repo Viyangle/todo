@@ -3,9 +3,11 @@ from __future__ import annotations
 from PySide6.QtCore import QDate, QSettings, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QMainWindow,
+    QMessageBox,
     QVBoxLayout,
     QWidget,
 )
@@ -153,6 +155,8 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.ai_base_url_edit = self.settings_page.ai_base_url_edit
         self.ai_model_edit = self.settings_page.ai_model_edit
         self.test_ai_button = self.settings_page.test_ai_button
+        self.export_data_button = self.settings_page.export_data_button
+        self.import_data_button = self.settings_page.import_data_button
 
     def _alias_tarot_page_widgets(self) -> None:
         self.tarot_question_edit = self.tarot_page.tarot_question_edit
@@ -196,6 +200,7 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.bangumi_limit_combo = self.bangumi_page.limit_combo
         self.bangumi_min_heat_checkbox = self.bangumi_page.min_heat_checkbox
         self.bangumi_fetch_button = self.bangumi_page.fetch_button
+        self.bangumi_progress_bar = self.bangumi_page.progress_bar
         self.bangumi_results_list = self.bangumi_page.results_list
 
     def _configure_page_widgets(self) -> None:
@@ -230,6 +235,8 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.settings_page.use_current_size_button.clicked.connect(self._window_manager.save_current_size_as_default)
         self.settings_page.save_button.clicked.connect(self._window_manager.save_settings)
         self.test_ai_button.clicked.connect(self.test_ai_connection)
+        self.export_data_button.clicked.connect(self.export_data_to_file)
+        self.import_data_button.clicked.connect(self.import_data_from_file)
 
         self.tarot_page.draw_button.clicked.connect(self.draw_tarot_spread)
         self.tarot_page.history_button.clicked.connect(self._window_manager.show_tarot_history_page)
@@ -428,3 +435,86 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
 
     def show_tarot_page(self) -> None:
         self._window_manager.show_tarot_page()
+
+    def export_data_to_file(self) -> None:
+        default_path = self.storage.db_path.parent / "todo-backup.json"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Data",
+            str(default_path),
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            stats = self.storage.export_data(file_path)
+        except Exception as error:
+            QMessageBox.warning(self, "Export Data", f"Export failed.\n\n{error}")
+            return
+
+        QMessageBox.information(
+            self,
+            "Export Data",
+            (
+                "Export completed.\n\n"
+                f"Todos: {stats['todos']}\n"
+                f"Tarot readings: {stats['tarot_readings']}"
+            ),
+        )
+
+    def import_data_from_file(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Data",
+            str(self.storage.db_path.parent),
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            preview = self.storage.preview_import_data(file_path)
+        except Exception as error:
+            QMessageBox.warning(self, "Import Data", f"Preview failed.\n\n{error}")
+            return
+
+        version = preview.get("version", "-")
+        exported_at = str(preview.get("exported_at", "") or "-")
+        todos = int(preview.get("todos", 0))
+        tarot_readings = int(preview.get("tarot_readings", 0))
+        reply = QMessageBox.question(
+            self,
+            "Import Data",
+            (
+                "Import Preview\n\n"
+                f"File: {file_path}\n"
+                f"Version: {version}\n"
+                f"Exported At: {exported_at}\n"
+                f"Todos: {todos}\n"
+                f"Tarot readings: {tarot_readings}\n\n"
+                "Importing will replace current local data. Continue?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            stats = self.storage.import_data(file_path)
+        except Exception as error:
+            QMessageBox.warning(self, "Import Data", f"Import failed.\n\n{error}")
+            return
+
+        self._refresh_list()
+        self._refresh_tarot_history()
+        QMessageBox.information(
+            self,
+            "Import Data",
+            (
+                "Import completed.\n\n"
+                f"Todos: {stats['todos']}\n"
+                f"Tarot readings: {stats['tarot_readings']}"
+            ),
+        )

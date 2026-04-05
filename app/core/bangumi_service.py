@@ -93,7 +93,13 @@ class BangumiService:
                 progress_callback("Loaded from local cache.")
             return local_cached[:top_limit]
 
-        if ranking_key == "hot":
+        if ranking_key == "score":
+            all_entries = self._get_score_ranking(
+                year=year,
+                min_votes=vote_threshold,
+                progress_callback=progress_callback,
+            )
+        elif ranking_key == "hot":
             all_entries = self._get_direct_ranking(
                 year=year,
                 sort_key="trends",
@@ -143,11 +149,12 @@ class BangumiService:
     ) -> list[BangumiAnimeEntry]:
         first_page = self._fetch_page(year, "collects", 1)
         max_page = self._extract_max_page(first_page)
+        end_page = min(max_page, self._max_fetch_pages)
         all_entries = self._parse_entries(first_page)
 
-        for page in range(2, max_page + 1):
+        for page in range(2, end_page + 1):
             if progress_callback:
-                progress_callback(f"Score ranking fetch: page {page}/{max_page}...")
+                progress_callback(f"Score ranking fetch: page {page}/{end_page}...")
             html = self._fetch_page(year, "collects", page)
             all_entries.extend(self._parse_entries(html))
 

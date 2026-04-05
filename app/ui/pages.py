@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QProgressBar,
     QSpinBox,
     QStackedWidget,
     QVBoxLayout,
@@ -211,6 +212,8 @@ class SettingsPageView(QWidget):
         self.ai_base_url_edit.setPlaceholderText("https://dashscope.aliyuncs.com/compatible-mode/v1")
         self.ai_model_edit.setPlaceholderText("qwen-max")
         self.test_ai_button = QPushButton("test AI")
+        self.export_data_button = QPushButton("export data")
+        self.import_data_button = QPushButton("import data")
         self.back_button = QPushButton("back")
         self.use_current_size_button = QPushButton("use current size")
         self.save_button = QPushButton("save")
@@ -223,6 +226,10 @@ class SettingsPageView(QWidget):
         form_layout.addRow("Base URL", self.ai_base_url_edit)
         form_layout.addRow("Model", self.ai_model_edit)
         form_layout.addRow("", self.test_ai_button)
+        import_export_row = QHBoxLayout()
+        import_export_row.addWidget(self.export_data_button)
+        import_export_row.addWidget(self.import_data_button)
+        form_layout.addRow("Data", import_export_row)
         layout.addLayout(form_layout)
 
         layout.addStretch()
@@ -501,6 +508,14 @@ class BangumiPageView(QWidget):
         controls.addWidget(self.min_heat_checkbox)
         controls.addWidget(self.fetch_button)
         layout.addLayout(controls)
+
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.hide()
+        layout.addWidget(self.progress_bar)
 
         self.results_list = QListWidget(self)
         self.results_list.setAlternatingRowColors(False)

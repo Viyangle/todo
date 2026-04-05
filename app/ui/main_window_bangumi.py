@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import re
 from html import escape
 
 from PySide6.QtCore import QDate, QObject, QThread, Signal, Qt
@@ -11,6 +12,7 @@ from app.ui.controllers import BangumiController
 class BangumiFetchWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
+    progress = Signal(str)
 
     def __init__(
         self,
@@ -34,7 +36,7 @@ class BangumiFetchWorker(QObject):
                 ranking_type=self._ranking_type,
                 limit=self._limit,
                 min_votes=self._min_votes,
-                progress_callback=None,
+                progress_callback=self.progress.emit,
             )
         except Exception as error:
             self.failed.emit(str(error))
@@ -43,12 +45,17 @@ class BangumiFetchWorker(QObject):
 
 
 class BangumiWindowMixin:
+    _page_progress_pattern = re.compile(r"page\s+(\d+)\s*/\s*(\d+)", re.IGNORECASE)
+
     def _configure_bangumi_page(self) -> None:
         current_year = QDate.currentDate().year()
         self.bangumi_year_spin.setValue(current_year)
         self.bangumi_ranking_combo.setCurrentIndex(0)
         self.bangumi_limit_combo.setCurrentIndex(1)
         self.bangumi_min_heat_checkbox.setChecked(True)
+        self.bangumi_progress_bar.hide()
+        self.bangumi_progress_bar.setRange(0, 100)
+        self.bangumi_progress_bar.setValue(0)
         self._on_bangumi_min_heat_toggled(True)
         self._bangumi_thread = None
         self._bangumi_worker = None
@@ -70,10 +77,13 @@ class BangumiWindowMixin:
 
         self._bangumi_loading = True
         self.bangumi_fetch_button.setEnabled(False)
+        self.bangumi_fetch_button.setText("loading...")
         self.bangumi_ranking_combo.setEnabled(False)
         self.bangumi_year_spin.setEnabled(False)
         self.bangumi_limit_combo.setEnabled(False)
         self.bangumi_min_heat_checkbox.setEnabled(False)
+        self.bangumi_progress_bar.setRange(0, 0)
+        self.bangumi_progress_bar.show()
         self.bangumi_results_list.clear()
 
         self._bangumi_thread = QThread(self)
@@ -86,6 +96,7 @@ class BangumiWindowMixin:
         )
         self._bangumi_worker.moveToThread(self._bangumi_thread)
         self._bangumi_thread.started.connect(self._bangumi_worker.run)
+        self._bangumi_worker.progress.connect(self._on_bangumi_progress)
         self._bangumi_worker.finished.connect(self._on_bangumi_finished)
         self._bangumi_worker.failed.connect(self._on_bangumi_failed)
         self._bangumi_worker.finished.connect(self._cleanup_bangumi_worker)
@@ -95,10 +106,14 @@ class BangumiWindowMixin:
     def _cleanup_bangumi_worker(self, *_args) -> None:
         self._bangumi_loading = False
         self.bangumi_fetch_button.setEnabled(True)
+        self.bangumi_fetch_button.setText("load")
         self.bangumi_ranking_combo.setEnabled(True)
         self.bangumi_year_spin.setEnabled(True)
         self.bangumi_limit_combo.setEnabled(True)
         self.bangumi_min_heat_checkbox.setEnabled(True)
+        self.bangumi_progress_bar.hide()
+        self.bangumi_progress_bar.setRange(0, 100)
+        self.bangumi_progress_bar.setValue(0)
 
         if self._bangumi_thread is not None:
             self._bangumi_thread.quit()
@@ -109,8 +124,27 @@ class BangumiWindowMixin:
             self._bangumi_worker.deleteLater()
             self._bangumi_worker = None
 
+    def _on_bangumi_progress(self, message: str) -> None:
+        text = message.strip()
+        if not text:
+            return
+
+        page_match = self._page_progress_pattern.search(text)
+        if page_match:
+            current = int(page_match.group(1))
+            total = max(1, int(page_match.group(2)))
+            self.bangumi_progress_bar.setRange(0, total)
+            self.bangumi_progress_bar.setValue(min(current, total))
+            return
+
+        if "cache" in text.lower():
+            self.bangumi_progress_bar.setRange(0, 1)
+            self.bangumi_progress_bar.setValue(1)
+
     def _on_bangumi_finished(self, entries) -> None:
         self.bangumi_results_list.clear()
+        self.bangumi_progress_bar.setRange(0, 1)
+        self.bangumi_progress_bar.setValue(1)
         if not entries:
             return
 
@@ -138,4 +172,5 @@ class BangumiWindowMixin:
             self.bangumi_results_list.setItemWidget(item, link_label)
 
     def _on_bangumi_failed(self, error_message: str) -> None:
+        self.bangumi_progress_bar.hide()
         QMessageBox.warning(self, "Bangumi", f"加载失败:\n{error_message}")
