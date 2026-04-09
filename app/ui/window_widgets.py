@@ -315,7 +315,7 @@ class QuoteBoxWidget(QWidget):
         painter.setPen(QColor(68, 50, 36))
 
         line_height = QFontMetrics(quote_font).lineSpacing()
-        author_text = f" - {self._author}" if self._author else ""
+        author_text = f" —— {self._author}" if self._author else ""
 
         author_font = QFont(quote_font)
         author_font.setBold(True)

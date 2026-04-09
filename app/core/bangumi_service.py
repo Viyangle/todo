@@ -5,6 +5,7 @@ import re
 import time
 from dataclasses import dataclass
 from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlencode
@@ -46,6 +47,100 @@ class BangumiAnimeEntry:
             votes=int(data.get("votes", 0)),
             info=str(data.get("info", "")),
         )
+
+
+class _BangumiListParser(HTMLParser):
+    def __init__(self, base_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self._base_url = base_url
+        self.entries: list[BangumiAnimeEntry] = []
+        self._current: dict[str, object] | None = None
+        self._field: str | None = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        attrs_map = dict(attrs)
+        if tag == "li" and str(attrs_map.get("id", "")).startswith("item_"):
+            self._current = {
+                "_parts": {"title": [], "subtitle": [], "rank": [], "score": [], "votes": [], "info": []}
+            }
+            self._field = None
+            return
+
+        if self._current is None:
+            return
+
+        class_name = str(attrs_map.get("class", ""))
+        classes = set(class_name.split())
+
+        if tag == "a" and attrs_map.get("href", "").startswith("/subject/") and "l" in classes:
+            href = str(attrs_map["href"])
+            self._current["path"] = href
+            try:
+                self._current["subject_id"] = int(href.rsplit("/", 1)[-1])
+            except ValueError:
+                self._current["subject_id"] = 0
+            self._field = "title"
+        elif tag == "small" and "grey" in classes:
+            self._field = "subtitle"
+        elif tag == "span" and "rank" in classes:
+            self._field = "rank"
+        elif tag == "small" and "fade" in classes:
+            self._field = "score"
+        elif tag == "span" and "tip_j" in classes:
+            self._field = "votes"
+        elif tag == "p" and "info" in classes and "tip" in classes:
+            self._field = "info"
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._current is None:
+            return
+
+        if tag == "li":
+            entry = self._build_entry(self._current)
+            if entry is not None:
+                self.entries.append(entry)
+            self._current = None
+            self._field = None
+            return
+
+        if tag in {"a", "small", "span", "p"}:
+            self._field = None
+
+    def handle_data(self, data: str) -> None:
+        if self._current is None or self._field is None:
+            return
+        parts = self._current.get("_parts")
+        if isinstance(parts, dict):
+            parts[self._field].append(data)
+
+    def _build_entry(self, payload: dict[str, object]) -> BangumiAnimeEntry | None:
+        path = str(payload.get("path", ""))
+        subject_id = int(payload.get("subject_id", 0) or 0)
+        parts = payload.get("_parts")
+        if not path or subject_id <= 0 or not isinstance(parts, dict):
+            return None
+
+        title = self._join(parts, "title")
+        if not title:
+            return None
+
+        rank_match = re.search(r"(\d+)", self._join(parts, "rank"))
+        score_match = re.search(r"([\d.]+)", self._join(parts, "score"))
+        votes_match = re.search(r"([\d,]+)", self._join(parts, "votes"))
+
+        return BangumiAnimeEntry(
+            subject_id=subject_id,
+            title=title,
+            subtitle=self._join(parts, "subtitle"),
+            url=f"{self._base_url}{path}",
+            rank=int(rank_match.group(1)) if rank_match else None,
+            score=float(score_match.group(1)) if score_match else None,
+            votes=int(votes_match.group(1).replace(",", "")) if votes_match else 0,
+            info=self._join(parts, "info"),
+        )
+
+    def _join(self, parts: dict[str, list[str]], key: str) -> str:
+        return " ".join("".join(parts.get(key, [])).split())
 
 
 class BangumiService:
@@ -195,6 +290,15 @@ class BangumiService:
         return max(page_numbers) if page_numbers else 1
 
     def _parse_entries(self, html: str) -> list[BangumiAnimeEntry]:
+        parser = _BangumiListParser(self._base_url)
+        parser.feed(html)
+        parser.close()
+        if parser.entries:
+            return parser.entries
+
+        return self._parse_entries_with_regex(html)
+
+    def _parse_entries_with_regex(self, html: str) -> list[BangumiAnimeEntry]:
         entries: list[BangumiAnimeEntry] = []
         for block in self._item_pattern.findall(html):
             url_match = re.search(r"<a href=\"(/subject/\d+)\" class=\"l\">", block)

@@ -61,21 +61,27 @@ class TarotInterpreter:
             timeout=20,
         )
 
-    def build_summary(self, question: str, cards: list[dict[str, str]]) -> str:
+    def build_summary(
+        self,
+        question: str,
+        cards: list[dict[str, str]],
+        spread_type: str = "past_present_future",
+    ) -> str:
         if not cards:
             return "No cards."
 
         if self._model is None or HumanMessage is None or SystemMessage is None:
-            return self._fallback_summary(cards)
+            return self._fallback_summary(cards, question, spread_type)
 
         system_prompt = (
             "You are a tarot interpreter. "
-            "Read the three cards as one coherent message. "
+            f"Read the {self._describe_spread(spread_type, len(cards))} as one coherent message. "
             "Reply in 1-2 short sentences, with no bullets, title, or disclaimer. "
             "Keep it concise and action-oriented."
         )
         user_prompt = (
             f"Question: {question or 'Not provided'}\n"
+            f"Spread Type: {spread_type}\n"
             f"Spread: {self._format_cards(cards)}\n"
             "Provide a short integrated interpretation with a practical next step."
         )
@@ -83,11 +89,11 @@ class TarotInterpreter:
         try:
             response = self._invoke(self._model, system_prompt, user_prompt)
         except Exception:
-            return self._fallback_summary(cards)
+            return self._fallback_summary(cards, question, spread_type)
 
         text = self._extract_text(response)
         if not text:
-            return self._fallback_summary(cards)
+            return self._fallback_summary(cards, question, spread_type)
         return self._trim_text(text)
 
     def test_connection(self, config: TarotAIConfig | None = None) -> str:
@@ -150,8 +156,33 @@ class TarotInterpreter:
             return compact
         return compact[: self._max_chars - 3].rstrip() + "..."
 
-    def _fallback_summary(self, cards: list[dict[str, str]]) -> str:
-        present = cards[1].get("meaning", "") if len(cards) > 1 else ""
-        future = cards[2].get("meaning", "") if len(cards) > 2 else ""
-        base = f"Current focus: {present} Next trend: {future}"
+    def _describe_spread(self, spread_type: str, card_count: int) -> str:
+        labels = {
+            "single_card": "single-card draw",
+            "past_present_future": "past / present / future spread",
+            "celtic_cross": "Celtic Cross spread",
+        }
+        return labels.get(spread_type, f"{card_count}-card spread")
+
+    def _fallback_summary(
+        self,
+        cards: list[dict[str, str]],
+        question: str,
+        spread_type: str,
+    ) -> str:
+        card_bits = []
+        for card in cards:
+            position = card.get("position", "Card")
+            meaning = card.get("meaning", "").strip()
+            if meaning:
+                card_bits.append(f"{position}: {meaning}")
+
+        if not card_bits:
+            return "No interpretation available."
+
+        focus = f"Question: {question}. " if question else ""
+        base = (
+            f"{focus}{self._describe_spread(spread_type, len(cards)).capitalize()}: "
+            + " ".join(card_bits)
+        )
         return self._trim_text(base)

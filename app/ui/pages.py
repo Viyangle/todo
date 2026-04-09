@@ -486,11 +486,11 @@ class BangumiPageView(QWidget):
         self.year_spin.setPrefix("Year ")
 
         self.ranking_combo = QComboBox(self)
-        self.ranking_combo.addItem("\u7efc\u5408", "comprehensive")
-        self.ranking_combo.addItem("\u6392\u540d", "score")
-        self.ranking_combo.addItem("\u70ed\u5ea6", "hot")
+        self.ranking_combo.addItem("综合", "comprehensive")
+        self.ranking_combo.addItem("评分", "score")
+        self.ranking_combo.addItem("热度", "hot")
         combo_metrics = QFontMetrics(self.ranking_combo.font())
-        combo_width = combo_metrics.horizontalAdvance("\u7efc\u5408\u699c") + 34
+        combo_width = combo_metrics.horizontalAdvance("综合榜") + 34
         self.ranking_combo.setFixedWidth(combo_width)
 
         self.limit_combo = QComboBox(self)
@@ -499,7 +499,7 @@ class BangumiPageView(QWidget):
         self.limit_combo.addItem("Top 50", 50)
         self.limit_combo.setCurrentIndex(1)
 
-        self.min_heat_checkbox = QCheckBox("热度限制")
+        self.min_heat_checkbox = QCheckBox("最低热度限制")
 
         self.fetch_button = QPushButton("load")
         controls.addWidget(self.year_spin)

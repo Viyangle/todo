@@ -218,16 +218,25 @@ class TodoRowWidget(QWidget):
 
         self._apply_state()
 
+    def update_content(self, title: str, due_at: str | None, done: bool, is_due_soon: bool) -> None:
+        self.label.setText(title)
+        self.deadline_label.setText(self._format_deadline(due_at))
+        self._done = done
+        self._is_due_soon = is_due_soon
+        self.indicator.set_done(done)
+        self.updateGeometry()
+        self._apply_state()
+
     def _format_deadline(self, due_at: str | None) -> str:
         if not due_at:
-            return "长期事项"
+            return "长期事务"
 
         from PySide6.QtCore import QDateTime
 
         due = QDateTime.fromString(due_at, Qt.ISODate)
         if not due.isValid():
-            return f"截止时间: {due_at}"
-        return f"截止时间: {due.toString('yyyy-MM-dd HH:mm')}"
+            return f"Due: {due_at}"
+        return f"Due: {due.toString('yyyy-MM-dd HH:mm')}"
 
     def set_done(self, done: bool) -> None:
         self._done = done

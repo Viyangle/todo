@@ -27,6 +27,8 @@ class TodoStorage:
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA foreign_keys=ON")
         return connection
 
     def _init_db(self) -> None:
@@ -58,6 +60,11 @@ class TodoStorage:
                 """
             )
             self._ensure_schema(conn)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_todos_sort_order ON todos(sort_order, id)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tarot_readings_favorite_id "
+                "ON tarot_readings(is_favorite, id DESC)"
+            )
             conn.commit()
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:

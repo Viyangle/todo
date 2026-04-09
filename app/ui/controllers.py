@@ -125,7 +125,11 @@ class TarotController:
             self._draw_one_tarot_card(card_data, position)
             for card_data, position in zip(selected_cards, positions)
         ]
-        summary = self.interpreter.build_summary(question=question, cards=spread_cards)
+        summary = self.interpreter.build_summary(
+            question=question,
+            cards=spread_cards,
+            spread_type=spread_type,
+        )
         stored_reading = self.storage.add_tarot_reading(
             spread_type=spread_type,
             cards=spread_cards,

@@ -1,16 +1,16 @@
 # Todo Desktop
 
-基于 `PySide6 + SQLite` 的 Windows 桌面待办应用，支持全局快捷键、托盘常驻、塔罗抽牌和 Bangumi 年度动画榜查询。
+基于 `PySide6 + SQLite` 的 Windows 桌面待办应用，支持全局快捷键、系统托盘、塔罗抽牌和 Bangumi 年度动画榜查询。
 
 ## 功能概览
 
 - Todo 管理：新增、完成切换、编辑标题、删除、拖拽排序
-- 截止时间：支持设置/清除，到期前提醒高亮
+- 截止时间：支持设置和清除，到期前高亮提醒
 - 窗口体验：无边框悬浮、边缘吸附、记忆窗口大小与位置
-- 系统托盘：最小化到托盘、托盘菜单显示/隐藏与退出
+- 系统托盘：最小化到托盘、托盘菜单显示 / 隐藏与退出
 - 全局热键：`Ctrl + Shift + Space` 显示或隐藏窗口
 - 塔罗功能：抽牌、历史记录、收藏、可选 AI 总结
-- Bangumi 榜单：按年份加载综合/评分/热度榜，支持最小热度过滤
+- Bangumi 榜单：按年份加载综合 / 评分 / 热度榜，支持最低热度过滤
 
 ## 项目结构
 
@@ -61,7 +61,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-首次运行会自动创建本地数据库（`QStandardPaths.AppDataLocation` 下的 `todo.db`）。
+首次运行会自动创建本地数据库，默认位于 `QStandardPaths.AppDataLocation` 下的 `todo.db`。
 
 ## 打包 EXE
 

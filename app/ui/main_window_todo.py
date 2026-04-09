@@ -120,35 +120,85 @@ class TodoWindowMixin:
     def _refresh_list(self, keep_scroll: bool = False, scroll_to_bottom: bool = False) -> None:
         scroll_bar = self.todo_list.verticalScrollBar()
         previous_scroll = scroll_bar.value()
-
-        self.todo_list.clear()
-        for todo in self._todo_controller.list_todos():
-            item = QListWidgetItem("")
-            item.setData(Qt.UserRole, todo.id)
-            item.setData(Qt.UserRole + 1, todo.title)
-            item.setData(Qt.UserRole + 2, todo.due_at)
-            item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            item.setFlags(item.flags() | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled | Qt.ItemIsSelectable)
-
-            row_widget = TodoRowWidget(
-                todo.title,
-                todo.due_at,
-                todo.done,
-                self._is_due_soon(todo.due_at, todo.done),
-                self.todo_list,
-            )
-            row_widget.indicator.clicked.connect(
-                lambda _checked=False, current_item=item: self.toggle_todo(current_item)
-            )
-            item.setSizeHint(row_widget.sizeHint())
-
-            self.todo_list.addItem(item)
-            self.todo_list.setItemWidget(item, row_widget)
+        todos = self._todo_controller.list_todos()
+        self._sync_todo_list_items(todos)
 
         if scroll_to_bottom:
             self.todo_list.scrollToBottom()
         elif keep_scroll:
             scroll_bar.setValue(previous_scroll)
+
+    def _sync_todo_list_items(self, todos) -> None:
+        existing_items = {}
+        for index in range(self.todo_list.count()):
+            item = self.todo_list.item(index)
+            todo_id = item.data(Qt.UserRole)
+            if todo_id is not None:
+                existing_items[int(todo_id)] = item
+
+        target_ids = {todo.id for todo in todos}
+        for index in range(self.todo_list.count() - 1, -1, -1):
+            item = self.todo_list.item(index)
+            todo_id = item.data(Qt.UserRole)
+            if todo_id is None or int(todo_id) in target_ids:
+                continue
+            self.todo_list.removeItemWidget(item)
+            self.todo_list.takeItem(index)
+
+        for target_index, todo in enumerate(todos):
+            item = existing_items.get(todo.id)
+            if item is None:
+                item, row_widget = self._create_todo_list_item(todo)
+                self.todo_list.insertItem(target_index, item)
+                self._update_todo_list_item(item, todo, row_widget)
+                continue
+
+            current_index = self.todo_list.row(item)
+            if current_index != target_index:
+                widget = self.todo_list.itemWidget(item)
+                if widget is not None:
+                    self.todo_list.removeItemWidget(item)
+                moved_item = self.todo_list.takeItem(current_index)
+                self.todo_list.insertItem(target_index, moved_item)
+                if widget is not None:
+                    self.todo_list.setItemWidget(moved_item, widget)
+                item = moved_item
+
+            self._update_todo_list_item(item, todo)
+
+    def _create_todo_list_item(self, todo) -> tuple[QListWidgetItem, TodoRowWidget]:
+        item = QListWidgetItem("")
+        item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        item.setFlags(item.flags() | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled | Qt.ItemIsSelectable)
+
+        row_widget = TodoRowWidget(
+            todo.title,
+            todo.due_at,
+            todo.done,
+            self._is_due_soon(todo.due_at, todo.done),
+            self.todo_list,
+        )
+        row_widget.indicator.clicked.connect(
+            lambda _checked=False, current_item=item: self.toggle_todo(current_item)
+        )
+        return item, row_widget
+
+    def _update_todo_list_item(self, item: QListWidgetItem, todo, row_widget: TodoRowWidget | None = None) -> None:
+        item.setData(Qt.UserRole, todo.id)
+        item.setData(Qt.UserRole + 1, todo.title)
+        item.setData(Qt.UserRole + 2, todo.due_at)
+
+        widget = row_widget or self.todo_list.itemWidget(item)
+        if isinstance(widget, TodoRowWidget):
+            widget.update_content(
+                todo.title,
+                todo.due_at,
+                todo.done,
+                self._is_due_soon(todo.due_at, todo.done),
+            )
+            item.setSizeHint(widget.sizeHint())
+            if row_widget is not None:
+                self.todo_list.setItemWidget(item, row_widget)
 
     def persist_current_order(self) -> None:
         todo_ids = []
