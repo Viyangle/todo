@@ -99,6 +99,33 @@ class MainPageView(QWidget):
         input_layout.addWidget(self.add_button)
         layout.addLayout(input_layout)
 
+        filter_layout = QHBoxLayout()
+        filter_layout.setSpacing(8)
+        self.filter_all_button = QPushButton("all")
+        self.filter_today_button = QPushButton("today")
+        self.filter_future_button = QPushButton("next 3 days")
+        self.filter_overdue_button = QPushButton("overdue")
+        self.filter_longterm_button = QPushButton("long-term")
+
+        self.filter_buttons = [
+            self.filter_all_button,
+            self.filter_today_button,
+            self.filter_future_button,
+            self.filter_overdue_button,
+            self.filter_longterm_button,
+        ]
+        for button in self.filter_buttons:
+            button.setObjectName("todoFilterButton")
+            button.setCheckable(True)
+
+        filter_layout.addWidget(self.filter_all_button)
+        filter_layout.addWidget(self.filter_today_button)
+        filter_layout.addWidget(self.filter_future_button)
+        filter_layout.addWidget(self.filter_overdue_button)
+        filter_layout.addWidget(self.filter_longterm_button)
+        filter_layout.addStretch()
+        layout.addLayout(filter_layout)
+
         self.todo_list = ReorderableTodoListWidget()
         layout.addWidget(self.todo_list)
 

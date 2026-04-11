@@ -1,14 +1,51 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QDate, QPoint, QTime, Qt
+from PySide6.QtCore import QDate, QDateTime, QPoint, QTime, Qt
 from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QApplication, QInputDialog, QListWidgetItem, QMenu, QMessageBox
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QInputDialog, QListWidgetItem, QMenu, QMessageBox
 
 from app.ui.pages import TodoDueDateDialog
 from app.ui.todo_widgets import TodoRowWidget
 
 
 class TodoWindowMixin:
+    def set_todo_filter(self, filter_key: str) -> None:
+        normalized_filter = filter_key if filter_key in {
+            "all",
+            "today",
+            "future_3_days",
+            "overdue",
+            "long_term",
+        } else "all"
+        if self._todo_filter == normalized_filter:
+            self._update_todo_filter_buttons()
+            return
+
+        self._todo_filter = normalized_filter
+        self._update_todo_filter_buttons()
+        self._refresh_list()
+
+    def _update_todo_filter_buttons(self) -> None:
+        button_map = {
+            "all": self.filter_all_button,
+            "today": self.filter_today_button,
+            "future_3_days": self.filter_future_button,
+            "overdue": self.filter_overdue_button,
+            "long_term": self.filter_longterm_button,
+        }
+        for filter_key, button in button_map.items():
+            button.blockSignals(True)
+            button.setChecked(self._todo_filter == filter_key)
+            button.blockSignals(False)
+
+        allow_reorder = self._todo_filter == "all"
+        self.todo_list.setDragEnabled(allow_reorder)
+        self.todo_list.viewport().setAcceptDrops(allow_reorder)
+        self.todo_list.setAcceptDrops(allow_reorder)
+        self.todo_list.setDragDropMode(
+            QAbstractItemView.InternalMove if allow_reorder else QAbstractItemView.NoDragDrop
+        )
+
     def add_todo(self) -> None:
         text = self.input_edit.text()
         if not text.strip():
@@ -120,7 +157,7 @@ class TodoWindowMixin:
     def _refresh_list(self, keep_scroll: bool = False, scroll_to_bottom: bool = False) -> None:
         scroll_bar = self.todo_list.verticalScrollBar()
         previous_scroll = scroll_bar.value()
-        todos = self._todo_controller.list_todos()
+        todos = self._filter_todos(self._todo_controller.list_todos())
         self._sync_todo_list_items(todos)
 
         if scroll_to_bottom:
@@ -165,6 +202,43 @@ class TodoWindowMixin:
                 item = moved_item
 
             self._update_todo_list_item(item, todo)
+
+    def _filter_todos(self, todos) -> list:
+        if self._todo_filter == "all":
+            return todos
+
+        now = QDateTime.currentDateTime()
+        today = now.date()
+        future_end = today.addDays(3)
+        filtered = []
+        for todo in todos:
+            due_at = getattr(todo, "due_at", None)
+            done = bool(getattr(todo, "done", False))
+
+            if self._todo_filter == "long_term":
+                if not due_at:
+                    filtered.append(todo)
+                continue
+
+            if not due_at:
+                continue
+
+            due_time = QDateTime.fromString(due_at, Qt.ISODate)
+            if not due_time.isValid():
+                continue
+
+            due_date = due_time.date()
+            if self._todo_filter == "today":
+                if due_date == today:
+                    filtered.append(todo)
+            elif self._todo_filter == "future_3_days":
+                if today < due_date <= future_end:
+                    filtered.append(todo)
+            elif self._todo_filter == "overdue":
+                if not done and due_time < now:
+                    filtered.append(todo)
+
+        return filtered
 
     def _create_todo_list_item(self, todo) -> tuple[QListWidgetItem, TodoRowWidget]:
         item = QListWidgetItem("")

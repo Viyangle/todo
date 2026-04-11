@@ -60,6 +60,7 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self._tarot_worker = None
         self._tarot_loading = False
         self._tarot_result_ready = False
+        self._todo_filter = "all"
 
         self.setWindowTitle("Todo")
         self.setMinimumSize(self._minimum_size)
@@ -145,6 +146,11 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.todo_list = self.main_page.todo_list
         self.quote_box = self.main_page.quote_box
         self.resize_handle = self.main_page.resize_handle
+        self.filter_all_button = self.main_page.filter_all_button
+        self.filter_today_button = self.main_page.filter_today_button
+        self.filter_future_button = self.main_page.filter_future_button
+        self.filter_overdue_button = self.main_page.filter_overdue_button
+        self.filter_longterm_button = self.main_page.filter_longterm_button
 
     def _alias_settings_page_widgets(self) -> None:
         self.default_width_spin = self.settings_page.default_width_spin
@@ -221,6 +227,11 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.main_page.bangumi_button.clicked.connect(self._window_manager.show_bangumi_page)
         self.main_page.delete_button.clicked.connect(self.delete_completed)
         self.main_page.refresh_button.clicked.connect(self.refresh_main_page)
+        self.filter_all_button.clicked.connect(lambda: self.set_todo_filter("all"))
+        self.filter_today_button.clicked.connect(lambda: self.set_todo_filter("today"))
+        self.filter_future_button.clicked.connect(lambda: self.set_todo_filter("future_3_days"))
+        self.filter_overdue_button.clicked.connect(lambda: self.set_todo_filter("overdue"))
+        self.filter_longterm_button.clicked.connect(lambda: self.set_todo_filter("long_term"))
 
         self.default_width_spin.setRange(self._minimum_size.width(), 1200)
         self.default_width_spin.setSingleStep(20)
@@ -282,6 +293,7 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self._due_popup_show_timer.timeout.connect(self._show_due_popup)
         self._on_loading_game_changed()
         self._update_loading_game_timer("00:00.0")
+        self._update_todo_filter_buttons()
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(
@@ -401,6 +413,24 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
             }}
             QPushButton:pressed {{
                 background-color: rgba(62, 93, 129, 210);
+            }}
+            #todoFilterButton {{
+                padding: 6px 12px;
+                font-size: 12px;
+                border-radius: 14px;
+                background-color: rgba(255, 255, 255, 76);
+                color: rgb(31, 39, 51);
+            }}
+            #todoFilterButton:checked {{
+                background-color: rgba(61, 96, 146, 214);
+                border: 1px solid rgba(255, 255, 255, 90);
+                color: rgb(245, 248, 252);
+            }}
+            #todoFilterButton:hover {{
+                background-color: rgba(171, 211, 247, 146);
+            }}
+            #todoFilterButton:checked:hover {{
+                background-color: rgba(69, 108, 163, 224);
             }}
             """
         )
