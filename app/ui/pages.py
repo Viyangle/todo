@@ -529,11 +529,13 @@ class BangumiPageView(QWidget):
         self.min_heat_checkbox = QCheckBox("最低热度限制")
 
         self.fetch_button = QPushButton("load")
+        self.recommend_button = QPushButton("recommend")
         controls.addWidget(self.year_spin)
         controls.addWidget(self.ranking_combo)
         controls.addWidget(self.limit_combo)
         controls.addWidget(self.min_heat_checkbox)
         controls.addWidget(self.fetch_button)
+        controls.addWidget(self.recommend_button)
         layout.addLayout(controls)
 
         self.progress_bar = QProgressBar(self)
@@ -543,6 +545,12 @@ class BangumiPageView(QWidget):
         self.progress_bar.setFixedHeight(6)
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
+
+        self.recommendation_label = QLabel("点击 recommend，从当前筛选条件里挑一部番剧。")
+        self.recommendation_label.setObjectName("bangumiRecommendationLabel")
+        self.recommendation_label.setWordWrap(True)
+        self.recommendation_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        layout.addWidget(self.recommendation_label)
 
         self.results_list = QListWidget(self)
         self.results_list.setAlternatingRowColors(False)

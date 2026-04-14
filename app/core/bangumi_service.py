@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import json
+import math
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -213,6 +215,24 @@ class BangumiService:
         self._write_local_cache(year, ranking_key, vote_threshold, all_entries)
         return all_entries[:top_limit]
 
+    def recommend_anime(
+        self,
+        year: int,
+        ranking_type: str,
+        limit: int = 20,
+        min_votes: int = 0,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> BangumiAnimeEntry | None:
+        candidate_limit = max(10, min(limit, 50))
+        entries = self.get_year_rankings(
+            year=year,
+            ranking_type=ranking_type,
+            limit=candidate_limit,
+            min_votes=min_votes,
+            progress_callback=progress_callback,
+        )
+        return self._pick_recommendation(entries)
+
     def _get_direct_ranking(
         self,
         year: int,
@@ -395,3 +415,18 @@ class BangumiService:
             cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         except OSError:
             return
+
+    def _pick_recommendation(self, entries: list[BangumiAnimeEntry]) -> BangumiAnimeEntry | None:
+        if not entries:
+            return None
+
+        pool = entries[: min(len(entries), 30)]
+        weights: list[float] = []
+        pool_size = len(pool)
+        for index, entry in enumerate(pool):
+            rank_weight = max(pool_size - index, 1)
+            score_weight = max(entry.score or 6.5, 1.0)
+            vote_weight = max(math.log10(entry.votes + 10), 1.0)
+            weights.append(rank_weight * score_weight * vote_weight)
+
+        return random.choices(pool, weights=weights, k=1)[0]

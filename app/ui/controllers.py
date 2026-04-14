@@ -242,3 +242,19 @@ class BangumiController:
             min_votes=min_votes,
             progress_callback=progress_callback,
         )
+
+    def recommend_anime(
+        self,
+        year: int,
+        ranking_type: str,
+        limit: int = 20,
+        min_votes: int = 0,
+        progress_callback=None,
+    ) -> BangumiAnimeEntry | None:
+        return self.service.recommend_anime(
+            year=year,
+            ranking_type=ranking_type,
+            limit=limit,
+            min_votes=min_votes,
+            progress_callback=progress_callback,
+        )

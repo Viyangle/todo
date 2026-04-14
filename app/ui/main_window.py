@@ -206,7 +206,9 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.bangumi_limit_combo = self.bangumi_page.limit_combo
         self.bangumi_min_heat_checkbox = self.bangumi_page.min_heat_checkbox
         self.bangumi_fetch_button = self.bangumi_page.fetch_button
+        self.bangumi_recommend_button = self.bangumi_page.recommend_button
         self.bangumi_progress_bar = self.bangumi_page.progress_bar
+        self.bangumi_recommendation_label = self.bangumi_page.recommendation_label
         self.bangumi_results_list = self.bangumi_page.results_list
 
     def _configure_page_widgets(self) -> None:
@@ -275,6 +277,7 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self._configure_bangumi_page()
         self.bangumi_min_heat_checkbox.toggled.connect(self._on_bangumi_min_heat_toggled)
         self.bangumi_fetch_button.clicked.connect(self.load_bangumi_rankings)
+        self.bangumi_recommend_button.clicked.connect(self.recommend_bangumi)
         self.bangumi_page.back_button.clicked.connect(self._window_manager.show_main_page)
 
         self._due_date = self.due_calendar.selectedDate()
@@ -357,6 +360,15 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
                 background-color: rgba(241, 247, 252, 245);
                 border: 1px solid rgba(255, 255, 255, 170);
                 border-radius: 20px;
+            }}
+            #bangumiRecommendationLabel {{
+                background-color: rgba(255, 246, 220, 210);
+                border: 1px solid rgba(228, 176, 94, 190);
+                border-radius: 14px;
+                color: rgb(92, 61, 20);
+                padding: 12px 14px;
+                font-size: 13px;
+                font-weight: 600;
             }}
             QCalendarWidget QWidget {{
                 alternate-background-color: rgba(200, 220, 242, 140);
