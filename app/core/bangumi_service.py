@@ -10,7 +10,7 @@ from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 
 
@@ -49,6 +49,22 @@ class BangumiAnimeEntry:
             votes=int(data.get("votes", 0)),
             info=str(data.get("info", "")),
         )
+
+
+@dataclass
+class BangumiRecommendation:
+    subject_id: int
+    title: str
+    subtitle: str
+    url: str
+    rank: int | None
+    score: float | None
+    votes: int
+    info: str
+    air_date: str
+    summary: str
+    poster_url: str
+    poster_data: bytes | None = None
 
 
 class _BangumiListParser(HTMLParser):
@@ -105,7 +121,13 @@ class _BangumiListParser(HTMLParser):
             self._field = None
             return
 
-        if tag in {"a", "small", "span", "p"}:
+        if tag == "a" and self._field == "title":
+            self._field = None
+        elif tag == "small" and self._field in {"subtitle", "score"}:
+            self._field = None
+        elif tag == "span" and self._field in {"rank", "votes"}:
+            self._field = None
+        elif tag == "p" and self._field == "info":
             self._field = None
 
     def handle_data(self, data: str) -> None:
@@ -159,6 +181,9 @@ class BangumiService:
     def __init__(self, cache_dir: str | Path | None = None, cache_ttl_hours: int = 24) -> None:
         self._page_cache: dict[tuple[int, str, int], str] = {}
         self._result_cache: dict[tuple[int, str, int], list[BangumiAnimeEntry]] = {}
+        self._subject_cache: dict[int, BangumiRecommendation] = {}
+        self._recommendation_pool_cache: dict[tuple[int, int, int, int], list[BangumiAnimeEntry]] = {}
+        self._image_cache: dict[str, bytes] = {}
         self._cache_ttl_seconds = max(1, cache_ttl_hours) * 3600
         cache_root = Path(cache_dir) if cache_dir else Path("data") / "bangumi_cache"
         self._cache_dir = cache_root
@@ -179,16 +204,25 @@ class BangumiService:
         cache_key = (year, ranking_key, vote_threshold)
         in_memory_cached = self._result_cache.get(cache_key)
         if in_memory_cached is not None:
-            if progress_callback:
-                progress_callback("Loaded from memory cache.")
-            return in_memory_cached[:top_limit]
+            if self._has_broken_rank_cache(in_memory_cached):
+                self._result_cache.pop(cache_key, None)
+            else:
+                if progress_callback:
+                    progress_callback("Loaded from memory cache.")
+                return in_memory_cached[:top_limit]
 
         local_cached = self._read_local_cache(year, ranking_key, vote_threshold)
         if local_cached is not None:
-            self._result_cache[cache_key] = local_cached
-            if progress_callback:
-                progress_callback("Loaded from local cache.")
-            return local_cached[:top_limit]
+            if self._has_broken_rank_cache(local_cached):
+                try:
+                    self._cache_path(year, ranking_key, vote_threshold).unlink()
+                except OSError:
+                    pass
+            else:
+                self._result_cache[cache_key] = local_cached
+                if progress_callback:
+                    progress_callback("Loaded from local cache.")
+                return local_cached[:top_limit]
 
         if ranking_key == "score":
             all_entries = self._get_score_ranking(
@@ -232,6 +266,47 @@ class BangumiService:
             progress_callback=progress_callback,
         )
         return self._pick_recommendation(entries)
+
+    def recommend_from_year_range(
+        self,
+        start_year: int = 1995,
+        end_year: int = 2026,
+        top_n: int = 50,
+        min_votes: int = 0,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> BangumiRecommendation | None:
+        pool = self._build_recommendation_pool(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            min_votes=min_votes,
+            progress_callback=progress_callback,
+        )
+        selected = self._pick_recommendation(pool)
+        if selected is None:
+            return None
+
+        if progress_callback:
+            progress_callback(f"Loading details for {selected.title}...")
+        return self.get_subject_recommendation(selected, progress_callback=progress_callback)
+
+    def get_subject_recommendation(
+        self,
+        entry: BangumiAnimeEntry,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> BangumiRecommendation:
+        cached = self._subject_cache.get(entry.subject_id)
+        if cached is not None:
+            if progress_callback:
+                progress_callback("Loaded recommendation detail from memory cache.")
+            return cached
+
+        html = self._fetch_subject_page(entry.subject_id)
+        recommendation = self._parse_subject_recommendation(entry, html)
+        if recommendation.poster_url:
+            recommendation.poster_data = self._fetch_image_bytes(recommendation.poster_url)
+        self._subject_cache[entry.subject_id] = recommendation
+        return recommendation
 
     def _get_direct_ranking(
         self,
@@ -304,6 +379,38 @@ class BangumiService:
             html = response.read().decode("utf-8", errors="ignore")
         self._page_cache[cache_key] = html
         return html
+
+    def _fetch_subject_page(self, subject_id: int) -> str:
+        cache_key = (subject_id, "subject", 1)
+        cached = self._page_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        url = f"{self._base_url}/subject/{subject_id}"
+        request = Request(url, headers={"User-Agent": self._user_agent})
+        with urlopen(request, timeout=20) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+        self._page_cache[cache_key] = html
+        return html
+
+    def _fetch_image_bytes(self, image_url: str) -> bytes | None:
+        normalized_url = self._normalize_url(image_url)
+        if not normalized_url:
+            return None
+
+        cached = self._image_cache.get(normalized_url)
+        if cached is not None:
+            return cached
+
+        request = Request(normalized_url, headers={"User-Agent": self._user_agent})
+        try:
+            with urlopen(request, timeout=20) as response:
+                data = response.read()
+        except OSError:
+            return None
+
+        self._image_cache[normalized_url] = data
+        return data
 
     def _extract_max_page(self, html: str) -> int:
         page_numbers = [int(value) for value in re.findall(r"[?&]page=(\d+)", html)]
@@ -420,7 +527,7 @@ class BangumiService:
         if not entries:
             return None
 
-        pool = entries[: min(len(entries), 30)]
+        pool = list(entries)
         weights: list[float] = []
         pool_size = len(pool)
         for index, entry in enumerate(pool):
@@ -430,3 +537,93 @@ class BangumiService:
             weights.append(rank_weight * score_weight * vote_weight)
 
         return random.choices(pool, weights=weights, k=1)[0]
+
+    def _build_recommendation_pool(
+        self,
+        start_year: int,
+        end_year: int,
+        top_n: int,
+        min_votes: int,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> list[BangumiAnimeEntry]:
+        year_start = min(start_year, end_year)
+        year_end = max(start_year, end_year)
+        pool_key = (year_start, year_end, max(1, top_n), max(0, min_votes))
+        cached = self._recommendation_pool_cache.get(pool_key)
+        if cached is not None:
+            if progress_callback:
+                progress_callback("Loaded recommendation pool from memory cache.")
+            return cached
+
+        years = list(range(year_start, year_end + 1))
+        collected: list[BangumiAnimeEntry] = []
+        total = len(years)
+        for index, year in enumerate(years, start=1):
+            if progress_callback:
+                progress_callback(f"Collecting top {top_n}: {year} ({index}/{total})")
+            yearly_entries = self.get_year_rankings(
+                year=year,
+                ranking_type="score",
+                limit=top_n,
+                min_votes=min_votes,
+            )
+            collected.extend(yearly_entries)
+
+        deduped = self._deduplicate_entries(collected)
+        deduped.sort(
+            key=lambda entry: (
+                entry.score or 0.0,
+                entry.votes,
+                -(entry.rank or 999999),
+            ),
+            reverse=True,
+        )
+        self._recommendation_pool_cache[pool_key] = deduped
+        return deduped
+
+    def _parse_subject_recommendation(self, entry: BangumiAnimeEntry, html: str) -> BangumiRecommendation:
+        summary_match = re.search(r"<div id=\"subject_summary\"[^>]*>([\s\S]*?)</div>", html)
+        cover_match = re.search(r"<img[^>]+src=\"([^\"]+)\"[^>]*class=\"cover\"", html)
+        air_date = self._extract_subject_infobox_value(html, "放送开始")
+        if not air_date:
+            air_date = self._extract_subject_infobox_value(html, "开始")
+
+        summary = self._clean_text(summary_match.group(1)) if summary_match else ""
+        if not summary:
+            summary = entry.info
+
+        return BangumiRecommendation(
+            subject_id=entry.subject_id,
+            title=entry.title,
+            subtitle=entry.subtitle,
+            url=entry.url,
+            rank=entry.rank,
+            score=entry.score,
+            votes=entry.votes,
+            info=entry.info,
+            air_date=air_date or "Unknown",
+            summary=summary or "No summary available.",
+            poster_url=self._normalize_url(cover_match.group(1)) if cover_match else "",
+        )
+
+    def _extract_subject_infobox_value(self, html: str, label: str) -> str:
+        escaped_label = re.escape(label)
+        pattern = rf"<li[^>]*>\s*<span class=\"tip\">{escaped_label}:\s*</span>([\s\S]*?)</li>"
+        match = re.search(pattern, html)
+        if not match:
+            return ""
+        return self._clean_text(match.group(1))
+
+    def _normalize_url(self, url: str) -> str:
+        cleaned = url.strip()
+        if not cleaned:
+            return ""
+        if cleaned.startswith("//"):
+            return f"https:{cleaned}"
+        return urljoin(f"{self._base_url}/", cleaned)
+
+    def _has_broken_rank_cache(self, entries: list[BangumiAnimeEntry]) -> bool:
+        if not entries:
+            return False
+        sample = entries[: min(len(entries), 20)]
+        return all(entry.rank is None for entry in sample)

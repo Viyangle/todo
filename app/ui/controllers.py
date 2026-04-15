@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QDate, QDateTime, QTime, Qt
 
-from app.core.bangumi_service import BangumiAnimeEntry, BangumiService
+from app.core.bangumi_service import BangumiAnimeEntry, BangumiRecommendation, BangumiService
 from app.core.models import TarotReading, TodoItem
 from app.core.tarot_interpreter import TarotInterpreter
 from app.data.storage import TodoStorage
@@ -255,6 +255,22 @@ class BangumiController:
             year=year,
             ranking_type=ranking_type,
             limit=limit,
+            min_votes=min_votes,
+            progress_callback=progress_callback,
+        )
+
+    def recommend_from_year_range(
+        self,
+        start_year: int = 1995,
+        end_year: int = 2026,
+        top_n: int = 50,
+        min_votes: int = 0,
+        progress_callback=None,
+    ) -> BangumiRecommendation | None:
+        return self.service.recommend_from_year_range(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
             min_votes=min_votes,
             progress_callback=progress_callback,
         )

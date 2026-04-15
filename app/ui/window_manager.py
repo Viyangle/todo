@@ -104,6 +104,15 @@ class WindowManager:
             self.window._on_bangumi_min_heat_toggled(self.window.bangumi_min_heat_checkbox.isChecked())
         self.set_current_page(self.window.bangumi_page)
 
+    def show_bangumi_recommend_page(self) -> None:
+        self.set_current_page(self.window.bangumi_recommend_page)
+        if (
+            hasattr(self.window, "bangumi_recommend_name_label")
+            and self.window.bangumi_recommend_name_label.text() == "No recommendation yet."
+            and hasattr(self.window, "load_bangumi_recommendation")
+        ):
+            self.window.load_bangumi_recommendation()
+
     def show_main_page(self) -> None:
         self.set_current_page(self.window.main_page)
 

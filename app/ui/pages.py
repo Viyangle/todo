@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QProgressBar,
+    QScrollArea,
     QSpinBox,
     QStackedWidget,
     QVBoxLayout,
@@ -529,13 +530,11 @@ class BangumiPageView(QWidget):
         self.min_heat_checkbox = QCheckBox("最低热度限制")
 
         self.fetch_button = QPushButton("load")
-        self.recommend_button = QPushButton("recommend")
         controls.addWidget(self.year_spin)
         controls.addWidget(self.ranking_combo)
         controls.addWidget(self.limit_combo)
         controls.addWidget(self.min_heat_checkbox)
         controls.addWidget(self.fetch_button)
-        controls.addWidget(self.recommend_button)
         layout.addLayout(controls)
 
         self.progress_bar = QProgressBar(self)
@@ -546,23 +545,100 @@ class BangumiPageView(QWidget):
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
 
-        self.recommendation_label = QLabel("点击 recommend，从当前筛选条件里挑一部番剧。")
-        self.recommendation_label.setObjectName("bangumiRecommendationLabel")
-        self.recommendation_label.setWordWrap(True)
-        self.recommendation_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        layout.addWidget(self.recommendation_label)
-
         self.results_list = QListWidget(self)
         self.results_list.setAlternatingRowColors(False)
         layout.addWidget(self.results_list)
 
         actions = QHBoxLayout()
+        self.open_recommend_page_button = QPushButton("recommend")
         self.back_button = QPushButton("back")
-        actions.addWidget(self.back_button)
+        actions.addWidget(self.open_recommend_page_button)
         actions.addStretch()
+        actions.addWidget(self.back_button)
         layout.addLayout(actions)
 
     def render_rows(self, rows: list[str]) -> None:
         self.results_list.clear()
         for row in rows:
             self.results_list.addItem(QListWidgetItem(row))
+
+
+class BangumiRecommendPageView(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(10)
+
+        title = QLabel("Bangumi Recommend")
+        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        root_layout.addWidget(title)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.recommend_button = QPushButton("pick")
+        controls.addWidget(self.recommend_button)
+        controls.addStretch()
+        root_layout.addLayout(controls)
+
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.hide()
+        root_layout.addWidget(self.progress_bar)
+
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setObjectName("bangumiRecommendScrollArea")
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+
+        self.card_widget = QWidget(self.scroll_area)
+        self.card_widget.setObjectName("bangumiRecommendScrollWidget")
+        card_layout = QVBoxLayout(self.card_widget)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(12)
+
+        self.card_frame = QFrame(self.card_widget)
+        self.card_frame.setObjectName("bangumiRecommendCard")
+        frame_layout = QVBoxLayout(self.card_frame)
+        frame_layout.setContentsMargins(18, 18, 18, 18)
+        frame_layout.setSpacing(12)
+
+        self.poster_label = QLabel("No poster")
+        self.poster_label.setObjectName("bangumiRecommendPoster")
+        self.poster_label.setAlignment(Qt.AlignCenter)
+        self.poster_label.setMinimumHeight(320)
+        self.poster_label.setMaximumHeight(360)
+        frame_layout.addWidget(self.poster_label)
+
+        self.name_label = QLabel("No recommendation yet.")
+        self.name_label.setObjectName("bangumiRecommendName")
+        self.name_label.setAlignment(Qt.AlignCenter)
+        self.name_label.setWordWrap(True)
+        frame_layout.addWidget(self.name_label)
+
+        self.meta_label = QLabel("Score - | Air Date -")
+        self.meta_label.setObjectName("bangumiRecommendMeta")
+        self.meta_label.setAlignment(Qt.AlignCenter)
+        self.meta_label.setWordWrap(True)
+        frame_layout.addWidget(self.meta_label)
+
+        self.summary_label = QLabel("Press pick to get one anime recommendation.")
+        self.summary_label.setObjectName("bangumiRecommendSummary")
+        self.summary_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.summary_label.setWordWrap(True)
+        frame_layout.addWidget(self.summary_label)
+
+        card_layout.addWidget(self.card_frame)
+        card_layout.addStretch()
+        self.scroll_area.setWidget(self.card_widget)
+        root_layout.addWidget(self.scroll_area, 1)
+
+        actions = QHBoxLayout()
+        self.back_button = QPushButton("back")
+        actions.addWidget(self.back_button)
+        actions.addStretch()
+        root_layout.addLayout(actions)

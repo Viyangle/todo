@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+if __package__ in {None, ""}:
+    project_root = Path(__file__).resolve().parents[2]
+    project_root_str = str(project_root)
+    if project_root_str not in sys.path:
+        sys.path.insert(0, project_root_str)
+
 from PySide6.QtCore import QDate, QSettings, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -20,7 +29,14 @@ from app.ui.controllers import BangumiController, TarotController, TodoControlle
 from app.ui.main_window_bangumi import BangumiWindowMixin
 from app.ui.main_window_tarot import TarotWindowMixin, _safe_tarot_name_map
 from app.ui.main_window_todo import TodoWindowMixin
-from app.ui.pages import BangumiPageView, MainPageView, SettingsPageView, TarotHistoryPageView, TarotPageView
+from app.ui.pages import (
+    BangumiPageView,
+    BangumiRecommendPageView,
+    MainPageView,
+    SettingsPageView,
+    TarotHistoryPageView,
+    TarotPageView,
+)
 from app.ui.window_manager import WindowManager
 from app.ui.window_widgets import TitleBar
 
@@ -109,15 +125,24 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.tarot_page = TarotPageView(self.page_stack)
         self.tarot_history_page = TarotHistoryPageView(self.page_stack)
         self.bangumi_page = BangumiPageView(self.page_stack)
+        self.bangumi_recommend_page = BangumiRecommendPageView(self.page_stack)
 
         self._alias_main_page_widgets()
         self._alias_settings_page_widgets()
         self._alias_tarot_page_widgets()
         self._alias_tarot_history_widgets()
         self._alias_bangumi_page_widgets()
+        self._alias_bangumi_recommend_page_widgets()
         self._configure_page_widgets()
 
-        self._pages = [self.main_page, self.settings_page, self.tarot_page, self.tarot_history_page, self.bangumi_page]
+        self._pages = [
+            self.main_page,
+            self.settings_page,
+            self.tarot_page,
+            self.tarot_history_page,
+            self.bangumi_page,
+            self.bangumi_recommend_page,
+        ]
         for page in self._pages:
             page.hide()
             page_stack_layout.addWidget(page)
@@ -206,10 +231,17 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.bangumi_limit_combo = self.bangumi_page.limit_combo
         self.bangumi_min_heat_checkbox = self.bangumi_page.min_heat_checkbox
         self.bangumi_fetch_button = self.bangumi_page.fetch_button
-        self.bangumi_recommend_button = self.bangumi_page.recommend_button
         self.bangumi_progress_bar = self.bangumi_page.progress_bar
-        self.bangumi_recommendation_label = self.bangumi_page.recommendation_label
+        self.bangumi_open_recommend_page_button = self.bangumi_page.open_recommend_page_button
         self.bangumi_results_list = self.bangumi_page.results_list
+
+    def _alias_bangumi_recommend_page_widgets(self) -> None:
+        self.bangumi_recommend_pick_button = self.bangumi_recommend_page.recommend_button
+        self.bangumi_recommend_progress_bar = self.bangumi_recommend_page.progress_bar
+        self.bangumi_recommend_poster_label = self.bangumi_recommend_page.poster_label
+        self.bangumi_recommend_name_label = self.bangumi_recommend_page.name_label
+        self.bangumi_recommend_meta_label = self.bangumi_recommend_page.meta_label
+        self.bangumi_recommend_summary_label = self.bangumi_recommend_page.summary_label
 
     def _configure_page_widgets(self) -> None:
         self.input_edit.returnPressed.connect(self.add_todo)
@@ -275,10 +307,13 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.tarot_history_page.back_button.clicked.connect(self._window_manager.show_tarot_page)
         self._configure_tarot_spreads()
         self._configure_bangumi_page()
+        self._configure_bangumi_recommend_page()
         self.bangumi_min_heat_checkbox.toggled.connect(self._on_bangumi_min_heat_toggled)
         self.bangumi_fetch_button.clicked.connect(self.load_bangumi_rankings)
-        self.bangumi_recommend_button.clicked.connect(self.recommend_bangumi)
+        self.bangumi_open_recommend_page_button.clicked.connect(self._window_manager.show_bangumi_recommend_page)
         self.bangumi_page.back_button.clicked.connect(self._window_manager.show_main_page)
+        self.bangumi_recommend_pick_button.clicked.connect(self.load_bangumi_recommendation)
+        self.bangumi_recommend_page.back_button.clicked.connect(self._window_manager.show_bangumi_page)
 
         self._due_date = self.due_calendar.selectedDate()
         hour = int(self.due_hour_combo.currentText())
@@ -361,14 +396,46 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
                 border: 1px solid rgba(255, 255, 255, 170);
                 border-radius: 20px;
             }}
-            #bangumiRecommendationLabel {{
-                background-color: rgba(255, 246, 220, 210);
-                border: 1px solid rgba(228, 176, 94, 190);
-                border-radius: 14px;
-                color: rgb(92, 61, 20);
-                padding: 12px 14px;
+            #bangumiRecommendCard {{
+                background-color: rgba(255, 255, 255, 92);
+                border: 1px solid rgba(255, 255, 255, 140);
+                border-radius: 16px;
+            }}
+            #bangumiRecommendScrollArea {{
+                background: transparent;
+                border: none;
+            }}
+            #bangumiRecommendScrollArea QWidget {{
+                background: transparent;
+            }}
+            #bangumiRecommendScrollWidget {{
+                background: transparent;
+            }}
+            #bangumiRecommendPoster {{
+                background: transparent;
+                border: none;
+                color: rgb(31, 39, 51);
                 font-size: 13px;
                 font-weight: 600;
+                padding: 0;
+            }}
+            #bangumiRecommendName {{
+                color: rgb(31, 39, 51);
+                font-size: 23px;
+                font-weight: 900;
+            }}
+            #bangumiRecommendMeta {{
+                color: rgb(31, 39, 51);
+                font-size: 14px;
+                font-weight: 700;
+            }}
+            #bangumiRecommendSummary {{
+                background: transparent;
+                border: none;
+                color: rgb(31, 39, 51);
+                padding: 0;
+                font-size: 14px;
+                line-height: 1.5;
             }}
             QCalendarWidget QWidget {{
                 alternate-background-color: rgba(200, 220, 242, 140);

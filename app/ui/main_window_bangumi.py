@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import re
 from html import escape
-from typing import Literal
 
-from PySide6.QtCore import QDate, QObject, QThread, Signal, Qt
+from PySide6.QtCore import QDate, QObject, QSize, QThread, Signal, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QLabel, QListWidgetItem, QMessageBox
 
-from app.core.bangumi_service import BangumiAnimeEntry
+from app.core.bangumi_service import BangumiRecommendation
 from app.ui.controllers import BangumiController
 
 
-class BangumiFetchWorker(QObject):
+class BangumiListWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
     progress = Signal(str)
@@ -23,7 +23,6 @@ class BangumiFetchWorker(QObject):
         ranking_type: str,
         limit: int,
         min_votes: int,
-        mode: Literal["list", "recommend"],
     ) -> None:
         super().__init__()
         self._controller = controller
@@ -31,7 +30,6 @@ class BangumiFetchWorker(QObject):
         self._ranking_type = ranking_type
         self._limit = limit
         self._min_votes = min_votes
-        self._mode = mode
 
     def run(self) -> None:
         try:
@@ -42,22 +40,42 @@ class BangumiFetchWorker(QObject):
                 min_votes=self._min_votes,
                 progress_callback=self.progress.emit,
             )
-            recommendation = None
-            if self._mode == "recommend":
-                recommendation = self._controller.recommend_anime(
-                    year=self._year,
-                    ranking_type=self._ranking_type,
-                    limit=self._limit,
-                    min_votes=self._min_votes,
-                )
         except Exception as error:
             self.failed.emit(str(error))
             return
-        self.finished.emit({"mode": self._mode, "entries": entries, "recommendation": recommendation})
+        self.finished.emit(entries)
+
+
+class BangumiRecommendWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+    progress = Signal(str)
+
+    def __init__(
+        self,
+        controller: BangumiController,
+    ) -> None:
+        super().__init__()
+        self._controller = controller
+
+    def run(self) -> None:
+        try:
+            recommendation = self._controller.recommend_from_year_range(
+                start_year=1995,
+                end_year=2026,
+                top_n=50,
+                min_votes=0,
+                progress_callback=self.progress.emit,
+            )
+        except Exception as error:
+            self.failed.emit(str(error))
+            return
+        self.finished.emit(recommendation)
 
 
 class BangumiWindowMixin:
     _page_progress_pattern = re.compile(r"page\s+(\d+)\s*/\s*(\d+)", re.IGNORECASE)
+    _range_progress_pattern = re.compile(r"\((\d+)\s*/\s*(\d+)\)")
 
     def _configure_bangumi_page(self) -> None:
         current_year = QDate.currentDate().year()
@@ -72,69 +90,49 @@ class BangumiWindowMixin:
         self._bangumi_thread = None
         self._bangumi_worker = None
         self._bangumi_loading = False
-        self._bangumi_last_params: dict[str, int | str] | None = None
-        self._bangumi_last_entries: list[BangumiAnimeEntry] = []
-        self._set_bangumi_recommendation_text("点击 recommend，从当前筛选条件里挑一部番剧。")
+
+    def _configure_bangumi_recommend_page(self) -> None:
+        self.bangumi_recommend_progress_bar.hide()
+        self.bangumi_recommend_progress_bar.setRange(0, 100)
+        self.bangumi_recommend_progress_bar.setValue(0)
+        self._bangumi_recommend_thread = None
+        self._bangumi_recommend_worker = None
+        self._bangumi_recommend_loading = False
+        self._clear_bangumi_recommendation_card()
 
     def _on_bangumi_min_heat_toggled(self, checked: bool) -> None:
         self.bangumi_min_heat_checkbox.setToolTip(
-            f"开启后使用设置里的最低热度（{self._bangumi_min_votes}）" if checked else "关闭后不限制最低热度"
+            f"Use Bangumi min votes from settings ({self._bangumi_min_votes})" if checked else "No min votes limit"
         )
 
     def load_bangumi_rankings(self) -> None:
-        self._start_bangumi_request("list")
-
-    def recommend_bangumi(self) -> None:
-        params = self._current_bangumi_params()
-        if self._bangumi_last_params == params and self._bangumi_last_entries:
-            recommendation = self._bangumi_controller.recommend_anime(
-                year=int(params["year"]),
-                ranking_type=str(params["ranking_type"]),
-                limit=int(params["limit"]),
-                min_votes=int(params["min_votes"]),
-            )
-            self._set_bangumi_recommendation(recommendation)
-            return
-
-        self._start_bangumi_request("recommend")
-
-    def _current_bangumi_params(self) -> dict[str, int | str]:
-        return {
-            "year": int(self.bangumi_year_spin.value()),
-            "ranking_type": str(self.bangumi_ranking_combo.currentData() or "comprehensive"),
-            "limit": int(self.bangumi_limit_combo.currentData() or 20),
-            "min_votes": self._bangumi_min_votes if self.bangumi_min_heat_checkbox.isChecked() else 0,
-        }
-
-    def _start_bangumi_request(self, mode: Literal["list", "recommend"]) -> None:
         if self._bangumi_loading:
             return
 
-        params = self._current_bangumi_params()
+        year = int(self.bangumi_year_spin.value())
+        ranking_type = str(self.bangumi_ranking_combo.currentData() or "comprehensive")
+        limit = int(self.bangumi_limit_combo.currentData() or 20)
+        min_votes = self._bangumi_min_votes if self.bangumi_min_heat_checkbox.isChecked() else 0
 
         self._bangumi_loading = True
         self.bangumi_fetch_button.setEnabled(False)
-        self.bangumi_recommend_button.setEnabled(False)
-        self.bangumi_fetch_button.setText("loading..." if mode == "list" else "load")
-        self.bangumi_recommend_button.setText("picking..." if mode == "recommend" else "recommend")
+        self.bangumi_fetch_button.setText("loading...")
+        self.bangumi_open_recommend_page_button.setEnabled(False)
         self.bangumi_ranking_combo.setEnabled(False)
         self.bangumi_year_spin.setEnabled(False)
         self.bangumi_limit_combo.setEnabled(False)
         self.bangumi_min_heat_checkbox.setEnabled(False)
         self.bangumi_progress_bar.setRange(0, 0)
         self.bangumi_progress_bar.show()
-        if mode == "list":
-            self.bangumi_results_list.clear()
-        self._set_bangumi_recommendation_text("正在加载榜单..." if mode == "list" else "正在挑选中...")
+        self.bangumi_results_list.clear()
 
         self._bangumi_thread = QThread(self)
-        self._bangumi_worker = BangumiFetchWorker(
+        self._bangumi_worker = BangumiListWorker(
             controller=self._bangumi_controller,
-            year=int(params["year"]),
-            ranking_type=str(params["ranking_type"]),
-            limit=int(params["limit"]),
-            min_votes=int(params["min_votes"]),
-            mode=mode,
+            year=year,
+            ranking_type=ranking_type,
+            limit=limit,
+            min_votes=min_votes,
         )
         self._bangumi_worker.moveToThread(self._bangumi_thread)
         self._bangumi_thread.started.connect(self._bangumi_worker.run)
@@ -145,12 +143,34 @@ class BangumiWindowMixin:
         self._bangumi_worker.failed.connect(self._cleanup_bangumi_worker)
         self._bangumi_thread.start()
 
+    def load_bangumi_recommendation(self) -> None:
+        if self._bangumi_recommend_loading:
+            return
+
+        self._bangumi_recommend_loading = True
+        self.bangumi_recommend_pick_button.setEnabled(False)
+        self.bangumi_recommend_pick_button.setText("loading...")
+        self.bangumi_recommend_progress_bar.setRange(0, 0)
+        self.bangumi_recommend_progress_bar.show()
+
+        self._bangumi_recommend_thread = QThread(self)
+        self._bangumi_recommend_worker = BangumiRecommendWorker(
+            controller=self._bangumi_controller,
+        )
+        self._bangumi_recommend_worker.moveToThread(self._bangumi_recommend_thread)
+        self._bangumi_recommend_thread.started.connect(self._bangumi_recommend_worker.run)
+        self._bangumi_recommend_worker.progress.connect(self._on_bangumi_recommend_progress)
+        self._bangumi_recommend_worker.finished.connect(self._on_bangumi_recommend_finished)
+        self._bangumi_recommend_worker.failed.connect(self._on_bangumi_recommend_failed)
+        self._bangumi_recommend_worker.finished.connect(self._cleanup_bangumi_recommend_worker)
+        self._bangumi_recommend_worker.failed.connect(self._cleanup_bangumi_recommend_worker)
+        self._bangumi_recommend_thread.start()
+
     def _cleanup_bangumi_worker(self, *_args) -> None:
         self._bangumi_loading = False
         self.bangumi_fetch_button.setEnabled(True)
-        self.bangumi_recommend_button.setEnabled(True)
         self.bangumi_fetch_button.setText("load")
-        self.bangumi_recommend_button.setText("recommend")
+        self.bangumi_open_recommend_page_button.setEnabled(True)
         self.bangumi_ranking_combo.setEnabled(True)
         self.bangumi_year_spin.setEnabled(True)
         self.bangumi_limit_combo.setEnabled(True)
@@ -167,6 +187,23 @@ class BangumiWindowMixin:
         if self._bangumi_worker is not None:
             self._bangumi_worker.deleteLater()
             self._bangumi_worker = None
+
+    def _cleanup_bangumi_recommend_worker(self, *_args) -> None:
+        self._bangumi_recommend_loading = False
+        self.bangumi_recommend_pick_button.setEnabled(True)
+        self.bangumi_recommend_pick_button.setText("pick")
+        self.bangumi_recommend_progress_bar.hide()
+        self.bangumi_recommend_progress_bar.setRange(0, 100)
+        self.bangumi_recommend_progress_bar.setValue(0)
+
+        if self._bangumi_recommend_thread is not None:
+            self._bangumi_recommend_thread.quit()
+            self._bangumi_recommend_thread.wait()
+            self._bangumi_recommend_thread.deleteLater()
+            self._bangumi_recommend_thread = None
+        if self._bangumi_recommend_worker is not None:
+            self._bangumi_recommend_worker.deleteLater()
+            self._bangumi_recommend_worker = None
 
     def _on_bangumi_progress(self, message: str) -> None:
         text = message.strip()
@@ -185,19 +222,27 @@ class BangumiWindowMixin:
             self.bangumi_progress_bar.setRange(0, 1)
             self.bangumi_progress_bar.setValue(1)
 
-    def _on_bangumi_finished(self, payload) -> None:
-        mode = payload.get("mode") if isinstance(payload, dict) else "list"
-        entries = payload.get("entries", []) if isinstance(payload, dict) else []
-        recommendation = payload.get("recommendation") if isinstance(payload, dict) else None
+    def _on_bangumi_recommend_progress(self, message: str) -> None:
+        text = message.strip()
+        if not text:
+            return
+
+        range_match = self._range_progress_pattern.search(text)
+        if range_match:
+            current = int(range_match.group(1))
+            total = max(1, int(range_match.group(2)))
+            self.bangumi_recommend_progress_bar.setRange(0, total)
+            self.bangumi_recommend_progress_bar.setValue(min(current, total))
+            return
+
+        if "cache" in text.lower():
+            self.bangumi_recommend_progress_bar.setRange(0, 1)
+            self.bangumi_recommend_progress_bar.setValue(1)
+
+    def _on_bangumi_finished(self, entries) -> None:
         self.bangumi_results_list.clear()
         self.bangumi_progress_bar.setRange(0, 1)
         self.bangumi_progress_bar.setValue(1)
-        self._bangumi_last_params = self._current_bangumi_params()
-        self._bangumi_last_entries = list(entries)
-        if mode == "recommend":
-            self._set_bangumi_recommendation(recommendation)
-        else:
-            self._set_bangumi_recommendation_text("点击 recommend，从当前筛选条件里挑一部番剧。")
         if not entries:
             return
 
@@ -206,7 +251,7 @@ class BangumiWindowMixin:
             row_html = (
                 f"{index:>2}. "
                 f"<a href=\"{escape(entry.url)}\">{escape(entry.title)}</a>"
-                f" | 评分 {score_text} | 热度 {entry.votes} | Rank {entry.rank or '-'}"
+                f" | Score {score_text} | Votes {entry.votes} | Rank {entry.rank or '-'}"
             )
 
             item = QListWidgetItem("")
@@ -219,27 +264,59 @@ class BangumiWindowMixin:
             link_label.setOpenExternalLinks(True)
             link_label.setWordWrap(True)
             link_label.setToolTip(entry.subtitle or entry.info or entry.title)
-            link_label.setStyleSheet("padding: 2px 0;")
+            link_label.setStyleSheet("padding: 4px 0; font-size: 15px;")
 
             item.setSizeHint(link_label.sizeHint())
             self.bangumi_results_list.setItemWidget(item, link_label)
 
-    def _on_bangumi_failed(self, error_message: str) -> None:
-        self.bangumi_progress_bar.hide()
-        self._set_bangumi_recommendation_text("推荐失败，请稍后再试。")
-        QMessageBox.warning(self, "Bangumi", f"加载失败:\n{error_message}")
-
-    def _set_bangumi_recommendation(self, entry: BangumiAnimeEntry | None) -> None:
-        if entry is None:
-            self._set_bangumi_recommendation_text("当前条件下没有可推荐的番剧。")
+    def _on_bangumi_recommend_finished(self, recommendation: BangumiRecommendation | None) -> None:
+        self.bangumi_recommend_progress_bar.setRange(0, 1)
+        self.bangumi_recommend_progress_bar.setValue(1)
+        if recommendation is None:
+            self._clear_bangumi_recommendation_card()
             return
 
-        score_text = f"{entry.score:.1f}" if entry.score is not None else "-"
-        detail = entry.subtitle or entry.info or "Bangumi 推荐"
-        self._set_bangumi_recommendation_text(
-            f"今日推荐: {entry.title}\n评分 {score_text} | 热度 {entry.votes} | Rank {entry.rank or '-'}\n{detail}"
-        )
+        self._render_bangumi_recommendation(recommendation)
 
-    def _set_bangumi_recommendation_text(self, text: str) -> None:
-        self.bangumi_recommendation_label.setText(text)
-        self.bangumi_recommendation_label.setToolTip(text)
+    def _on_bangumi_failed(self, error_message: str) -> None:
+        self.bangumi_progress_bar.hide()
+        QMessageBox.warning(self, "Bangumi", f"Load failed:\n{error_message}")
+
+    def _on_bangumi_recommend_failed(self, error_message: str) -> None:
+        self.bangumi_recommend_progress_bar.hide()
+        QMessageBox.warning(self, "Bangumi Recommend", f"Load failed:\n{error_message}")
+
+    def _render_bangumi_recommendation(self, recommendation: BangumiRecommendation) -> None:
+        self.bangumi_recommend_name_label.setText(recommendation.title)
+        score_text = f"{recommendation.score:.1f}" if recommendation.score is not None else "-"
+        self.bangumi_recommend_meta_label.setText(
+            f"Score {score_text} | Air Date {recommendation.air_date}"
+        )
+        summary = recommendation.summary.strip() or recommendation.info.strip() or "No summary available."
+        self.bangumi_recommend_summary_label.setText(summary)
+        self.bangumi_recommend_summary_label.setToolTip(summary)
+
+        if recommendation.poster_data:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(recommendation.poster_data):
+                scaled = pixmap.scaled(
+                    QSize(260, 360),
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+                self.bangumi_recommend_poster_label.setPixmap(scaled)
+                self.bangumi_recommend_poster_label.setText("")
+                self.bangumi_recommend_poster_label.setToolTip(recommendation.title)
+                return
+
+        self.bangumi_recommend_poster_label.setPixmap(QPixmap())
+        self.bangumi_recommend_poster_label.setText("Poster unavailable")
+        self.bangumi_recommend_poster_label.setToolTip(recommendation.title)
+
+    def _clear_bangumi_recommendation_card(self) -> None:
+        self.bangumi_recommend_poster_label.setPixmap(QPixmap())
+        self.bangumi_recommend_poster_label.setText("No poster")
+        self.bangumi_recommend_name_label.setText("No recommendation yet.")
+        self.bangumi_recommend_meta_label.setText("Score - | Air Date -")
+        self.bangumi_recommend_summary_label.setText("Press pick to get one anime recommendation.")
+        self.bangumi_recommend_summary_label.setToolTip("")
