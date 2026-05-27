@@ -1,10 +1,9 @@
 import json
 import sqlite3
+import sys
 import time
 from pathlib import Path
 from typing import Iterable, List
-
-from PySide6.QtCore import QStandardPaths
 
 from app.core.models import TarotReading, TodoItem
 
@@ -19,10 +18,11 @@ class TodoStorage:
         self._init_db()
 
     def _default_db_path(self) -> Path:
-        app_data_dir = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
-        if app_data_dir:
-            return Path(app_data_dir) / "data" / "todo.db"
-        return Path("data") / "todo.db"
+        if getattr(sys, "frozen", False):
+            base_dir = Path(sys.executable).resolve().parent
+        else:
+            base_dir = Path(__file__).resolve().parents[2]
+        return base_dir / "data" / "todo.db"
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)

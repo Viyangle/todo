@@ -45,7 +45,7 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
     def __init__(self, storage: TodoStorage) -> None:
         super().__init__()
         self.storage = storage
-        self.settings = QSettings("TodoDesktop", "Todo")
+        self.settings = self._create_settings(storage)
         self._reset_runner_scores_once()
         self._is_quitting = False
         self._snap_margin = 24
@@ -90,6 +90,11 @@ class MainWindow(TodoWindowMixin, TarotWindowMixin, BangumiWindowMixin, QMainWin
         self.refresh_main_page()
         self._refresh_tarot_history()
         QTimer.singleShot(0, self._prompt_for_ai_setup_if_needed)
+
+    def _create_settings(self, storage: TodoStorage) -> QSettings:
+        settings_path = storage.db_path.parent / "settings.ini"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        return QSettings(str(settings_path), QSettings.IniFormat)
 
     def _reset_runner_scores_once(self) -> None:
         migration_key = "games/runner_score_reset_v2"

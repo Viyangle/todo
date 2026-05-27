@@ -48,7 +48,7 @@ class ReorderableTodoListWidget(QListWidget):
         self._update_auto_scroll(self._last_drag_pos)
         self._drop_indicator_y = self._indicator_y_for_position(self._last_drag_pos)
         self.viewport().update()
-        event.acceptProposedAction()
+        super().dragMoveEvent(event)
 
     def dragLeaveEvent(self, event) -> None:  # type: ignore[override]
         self._stop_auto_scroll()
@@ -58,43 +58,14 @@ class ReorderableTodoListWidget(QListWidget):
 
     def dropEvent(self, event) -> None:  # type: ignore[override]
         self._stop_auto_scroll()
-        if event.source() is not self or self._drag_row is None:
-            self._drop_indicator_y = None
-            self.viewport().update()
-            super().dropEvent(event)
-            self.order_changed.emit()
-            return
-
-        source_row = self._drag_row
         self._drag_row = None
         self._drop_indicator_y = None
         self.viewport().update()
-
-        if source_row < 0 or source_row >= self.count():
-            event.ignore()
-            return
-
-        target_row = self._target_row_for_position(event.position().toPoint())
-        if target_row > source_row:
-            target_row -= 1
-
-        if target_row == source_row:
-            event.ignore()
-            self.viewport().update()
-            return
-
-        item = self.item(source_row)
-        widget = self.itemWidget(item)
-        if widget is not None:
-            self.removeItemWidget(item)
-
-        item = self.takeItem(source_row)
-        self.insertItem(target_row, item)
-        if widget is not None:
-            self.setItemWidget(item, widget)
-
-        event.acceptProposedAction()
-        self.order_changed.emit()
+        before_order = [self.item(index).data(Qt.UserRole) for index in range(self.count())]
+        super().dropEvent(event)
+        after_order = [self.item(index).data(Qt.UserRole) for index in range(self.count())]
+        if before_order != after_order:
+            self.order_changed.emit()
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
         super().paintEvent(event)
